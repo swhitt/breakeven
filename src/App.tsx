@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { calculate, housingPaymentLines, type CalcInputs, type CalcResult, type CostBasis } from "./engine/calculator";
+import { calculate, housingPaymentLines, type CalcInputs, type CalcResult } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
@@ -8,6 +8,13 @@ import { Derivation } from "./components/Derivation";
 import { Disclosure } from "./ui";
 import { yearsLabel, pct, usd } from "./lib/format";
 import { decodeShare, encodeShare } from "./lib/share";
+import {
+  cleanOverrides,
+  diffOverrides,
+  overridesFromShare,
+  pruneLocationOverrides,
+  rememberOverrides,
+} from "./lib/persist";
 import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
 import { fetchLiveMarket } from "./data/live";
@@ -44,88 +51,6 @@ const METRO_KEY = "bow:metro"; // last selected metro (detected or chosen)
 const HOME_KEY = "bow:home"; // the auto-detected locale, never overwritten by manual picks
 const OVERRIDES_KEY = "bow:overrides";
 
-// Manual edits we remember across reloads, each tagged with the kind we validate
-// on load so corrupted storage can't reach the engine (a bad number renders $NaN,
-// a bad enum breaks the toggle).
-const PERSIST_SPEC = {
-  homePrice: "number",
-  monthlyRent: "number",
-  downPaymentPct: "number",
-  propertyTax: "costBasis",
-  maintenance: "costBasis",
-  homeInsurance: "costBasis",
-  marginalTaxRate: "number",
-  filingJointly: "boolean",
-  standardDeduction: "number",
-  taxAuto: "boolean",
-  annualIncome: "number",
-  taxState: "string",
-  localTaxRate: "number",
-} as const satisfies Partial<Record<keyof AppInputs, "number" | "boolean" | "string" | "costBasis">>;
-const PERSIST_KEYS = Object.keys(PERSIST_SPEC) as (keyof typeof PERSIST_SPEC)[];
-// Of those, the ones tied to a specific place: cleared when you pick a new metro
-// (the override was for the old location), so they revert to that metro's default.
-// The flat-dollar `*Annual` figures are deliberately NOT here: a number the user
-// typed in $ mode is personal and survives a location switch (see selectLocation).
-const LOCATION_FIELDS: (keyof AppInputs)[] = ["homePrice", "monthlyRent", "propertyTax", "homeInsurance", "taxState"];
-
-// Validate a persisted/shared value as a CostBasis (an object, unlike the other
-// fields), so a tampered token can't smuggle a bad shape into the engine.
-function parseCostBasis(v: unknown): CostBasis | null {
-  if (typeof v !== "object" || v === null) return null;
-  const o = v as Record<string, unknown>;
-  if (o.kind === "pctOfValue" && typeof o.rate === "number" && Number.isFinite(o.rate)) {
-    return { kind: "pctOfValue", rate: o.rate };
-  }
-  if (o.kind === "flatAnnual" && typeof o.annual === "number" && Number.isFinite(o.annual)) {
-    return { kind: "flatAnnual", annual: o.annual };
-  }
-  return null;
-}
-
-// Deep-equal for the override diff: CostBasis fields are objects, so === would
-// always read as "changed" and bloat the share link with unchanged defaults.
-function valuesEqual(a: unknown, b: unknown): boolean {
-  if (a && b && typeof a === "object" && typeof b === "object") return JSON.stringify(a) === JSON.stringify(b);
-  return a === b;
-}
-
-// Each caller validates the value's runtime kind first, but TS can't correlate that
-// check with the key's type, so the one unavoidable index-write cast is localized here.
-function setOverride(o: Partial<AppInputs>, k: keyof AppInputs, v: unknown): void {
-  (o as Record<string, unknown>)[k] = v;
-}
-
-type FieldKind = "number" | "boolean" | "string" | "costBasis";
-
-// The single validator both untrusted paths (localStorage + share link) run values
-// through, so they can't drift apart (they used to: one coerced numeric strings, one
-// didn't). Returns the validated value, or undefined to drop it.
-function coerceByKind(kind: FieldKind, v: unknown): number | boolean | string | CostBasis | undefined {
-  switch (kind) {
-    case "number": {
-      const n = typeof v === "string" ? Number(v) : v;
-      return typeof n === "number" && Number.isFinite(n) ? n : undefined;
-    }
-    case "boolean":
-      return typeof v === "boolean" ? v : undefined;
-    case "string":
-      return typeof v === "string" ? v : undefined;
-    case "costBasis":
-      return parseCostBasis(v) ?? undefined;
-  }
-}
-
-// The kind of a reference (default) value, so a share link can be validated against the
-// shape of buildInputs() without keeping a second copy of the field-kind knowledge.
-function kindOf(v: unknown): FieldKind | undefined {
-  if (typeof v === "number") return "number";
-  if (typeof v === "boolean") return "boolean";
-  if (typeof v === "string") return "string";
-  if (v !== null && typeof v === "object") return "costBasis";
-  return undefined;
-}
-
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
   try {
@@ -137,20 +62,12 @@ function storedLocation(): LocationData {
   return usHome;
 }
 
-// Whitelist to known fields and validate each by kind, so corrupted storage
-// (e.g. {homePrice: null}, {maintenanceMode: 7}) can't reach the engine and
-// render $NaN / a bogus $0 home or break a control.
+// Read the remembered edits from storage; cleanOverrides whitelists + validates them so
+// corrupted storage can't reach the engine.
 function loadOverrides(): Partial<AppInputs> {
   try {
     const raw = localStorage.getItem(OVERRIDES_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const clean: Partial<AppInputs> = {};
-    for (const k of PERSIST_KEYS) {
-      const val = coerceByKind(PERSIST_SPEC[k], parsed[k]);
-      if (val !== undefined) setOverride(clean, k, val);
-    }
-    return clean;
+    if (raw) return cleanOverrides(JSON.parse(raw) as Record<string, unknown>);
   } catch {
     /* storage unavailable or malformed */
   }
@@ -176,16 +93,7 @@ function readShareLink(): { loc: LocationData; overrides: Partial<AppInputs> } |
     if (!payload) return null;
     const loc = (payload.m ? locations.find((l) => l.id === payload.m) : null) ?? usHome;
     const ref = buildInputs(usHome, marketRaw as MarketData, propertyTax, insurance);
-    const o = payload.o ?? {};
-    const overrides: Partial<AppInputs> = {};
-    for (const k of Object.keys(ref) as (keyof AppInputs)[]) {
-      if (!(k in o)) continue;
-      const kind = kindOf(ref[k]);
-      if (!kind) continue;
-      const val = coerceByKind(kind, o[k]);
-      if (val !== undefined) setOverride(overrides, k, val);
-    }
-    return { loc, overrides };
+    return { loc, overrides: overridesFromShare(payload.o ?? {}, ref) };
   } catch {
     return null;
   }
@@ -240,13 +148,7 @@ export function App() {
   const patch = (p: Partial<AppInputs>) => {
     touched.current = true;
     setInputs((prev) => ({ ...prev, ...p }));
-    let changed = false;
-    for (const k of PERSIST_KEYS) {
-      if (k in p) {
-        setOverride(overrides.current, k, p[k]);
-        changed = true;
-      }
-    }
+    const changed = rememberOverrides(overrides.current, p);
     if (changed && !shareActive.current) saveOverrides(overrides.current);
   };
 
@@ -270,13 +172,7 @@ export function App() {
       };
     });
     // A new place invalidates place-specific overrides (kept personal ones).
-    let changed = false;
-    for (const k of LOCATION_FIELDS) {
-      if (k in overrides.current) {
-        delete overrides.current[k];
-        changed = true;
-      }
-    }
+    const changed = pruneLocationOverrides(overrides.current);
     if (changed && !shareActive.current) saveOverrides(overrides.current);
     if (remember && !shareActive.current) {
       try {
@@ -354,10 +250,7 @@ export function App() {
   function share() {
     try {
       const defaults = buildInputs(selected, market, propertyTax, insurance);
-      const o: Record<string, unknown> = {};
-      for (const k of Object.keys(inputs) as (keyof AppInputs)[]) {
-        if (!valuesEqual(inputs[k], defaults[k])) o[k] = inputs[k];
-      }
+      const o = diffOverrides(inputs, defaults);
       const url = `${window.location.origin}${window.location.pathname}?s=${encodeShare({ m: selected.id, o })}`;
       void navigator.clipboard?.writeText(url);
       setCopied(true);
