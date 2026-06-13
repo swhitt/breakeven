@@ -103,7 +103,7 @@ function marginalRate(brackets: Bracket[], taxable: number): number {
 }
 
 /** Total tax owed across an ascending bracket schedule (the area under it). */
-function totalTax(brackets: Bracket[], taxable: number): number {
+export function bracketTax(brackets: Bracket[], taxable: number): number {
   let tax = 0;
   let lower = 0;
   for (const b of brackets) {
@@ -161,7 +161,7 @@ export function estimateStateIncomeTax(
   const status = filingJointly ? "joint" : "single";
   const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
   const st = STATE_TAX[stateCode];
-  const stateTax = st ? totalTax(st[status], taxable) : 0;
+  const stateTax = st ? bracketTax(st[status], taxable) : 0;
   const local = Number.isFinite(localRate) && localRate > 0 ? localRate * taxable : 0;
   return Math.round(stateTax + local);
 }

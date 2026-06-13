@@ -3,6 +3,7 @@ import type { CalcInputs, CalcResult } from "../engine/calculator";
 import {
   FEDERAL_BRACKETS,
   STATE_TAX,
+  bracketTax,
   estimateMarginalRate,
   estimateStateIncomeTax,
   type Bracket,
@@ -102,6 +103,13 @@ export function Derivation({
   const itemized = (y1?.interestPaid ?? 0) * intFrac + saltUsed;
   const itemizes = (y1?.taxBenefit ?? 0) > 0;
 
+  // Actual tax owed, summed across the full bracket schedule (not marginal * income).
+  const fedTax = Math.round(bracketTax(FEDERAL_BRACKETS[status], taxable));
+  const stateScheduleTax = st ? Math.round(bracketTax(st[status], taxable)) : 0;
+  const localTax = Math.round(est.local * taxable);
+  const fedEff = inputs.annualIncome > 0 ? fedTax / inputs.annualIncome : 0;
+  const stateEff = inputs.annualIncome > 0 ? stateScheduleTax / inputs.annualIncome : 0;
+
   return (
     <div className="space-y-6 text-sm">
       <Section title="Income tax derivation">
@@ -119,6 +127,10 @@ export function Derivation({
                 Federal 2026: marginal {rateLabel(est.federal)}, which is what values the deduction
               </p>
               <BracketTable brackets={FEDERAL_BRACKETS[status]} taxable={taxable} />
+              <p className="mt-1 text-muted">
+                Full schedule on {usd(taxable)} taxable: <span className="tnum text-ink">{usd(fedTax)}</span> federal
+                income tax ({pct(fedEff, 1)} of income).
+              </p>
             </div>
 
             <div>
@@ -126,22 +138,25 @@ export function Derivation({
                 <p className="font-medium text-ink">{stateName}: no state income tax</p>
               ) : stateFlat ? (
                 <p className="font-medium text-ink">
-                  {stateName}: flat {rateLabel(est.state)}, estimated state income tax{" "}
-                  <span className="tnum">{usd(stateTaxDollars)}/yr</span>, which counts toward your SALT cap
+                  {stateName}: flat {rateLabel(est.state)}, so{" "}
+                  <span className="tnum">{usd(stateScheduleTax)}</span> state income tax ({pct(stateEff, 1)} of income),
+                  which counts toward your SALT cap.
                 </p>
               ) : st ? (
                 <>
-                  <p className="font-medium text-ink">
-                    {stateName}: marginal {rateLabel(est.state)}; estimated state income tax{" "}
-                    <span className="tnum">{usd(stateTaxDollars)}/yr</span> counts toward your SALT cap
-                  </p>
+                  <p className="font-medium text-ink">{stateName}: marginal {rateLabel(est.state)}</p>
                   <BracketTable brackets={st[status]} taxable={taxable} />
+                  <p className="mt-1 text-muted">
+                    Full schedule: <span className="tnum text-ink">{usd(stateScheduleTax)}</span> state income tax (
+                    {pct(stateEff, 1)} of income)
+                    {localTax > 0 ? ` plus ${usd(localTax)} local` : ""}, all counting toward your SALT cap.
+                  </p>
                 </>
               ) : (
                 <p className="font-medium text-ink">No state income tax applied (national)</p>
               )}
-              {est.local > 0 && (
-                <p className="mt-1 text-muted">Local income tax {rateLabel(est.local)}, also part of SALT.</p>
+              {est.local > 0 && stateFlat && (
+                <p className="mt-1 text-muted">Plus {usd(localTax)} local income tax, also part of SALT.</p>
               )}
             </div>
           </div>

@@ -4,7 +4,7 @@ import { usd } from "../lib/format";
 export function Breakdown({ years }: { years: YearRow[] }) {
   const cols: { key: keyof YearRow; label: string; tone?: "buy" | "rent" | "good" }[] = [
     { key: "mortgagePaid", label: "Mortgage" },
-    { key: "interestPaid", label: "of which interest" },
+    { key: "interestPaid", label: "Interest" },
     { key: "interestDeductionValue", label: "Interest deduction", tone: "good" },
     { key: "propertyTax", label: "Property tax" },
     { key: "maintenance", label: "Maintenance" },
