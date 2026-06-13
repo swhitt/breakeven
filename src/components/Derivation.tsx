@@ -180,9 +180,8 @@ export function Derivation({
             <span className="tnum text-ink">{usd(inputs.standardDeduction)}</span> standard deduction:{" "}
             {itemizes ? (
               <span className="font-semibold text-buy-text">
-                you itemize, so buying earns about {usd(y1?.taxBenefit ?? 0)} of federal tax benefit in year 1, of which
-                the mortgage interest deduction is worth about {usd(y1?.interestDeductionValue ?? 0)} (it tapers as the
-                loan amortizes and interest falls; see the year-by-year table).
+                you itemize, so buying earns about {usd(y1?.taxBenefit ?? 0)} of federal tax benefit in year 1 (it
+                tapers as the loan amortizes and interest falls; see the year-by-year table).
               </span>
             ) : (
               <span className="font-semibold text-ink">

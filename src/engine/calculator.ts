@@ -92,8 +92,7 @@ export interface YearRow {
   insurance: number;
   hoa: number;
   pmi: number;
-  taxBenefit: number; // total itemization premium over the standard deduction, money back
-  interestDeductionValue: number; // the slice of taxBenefit attributable to mortgage interest
+  taxBenefit: number; // positive = money back (itemization premium over the standard deduction)
   homeValue: number;
   loanBalance: number;
   equity: number;
@@ -238,14 +237,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
       // rate already implies AGI past the phaseout), so we treat PMI as a pure cost.
       const itemized = yrDeductibleInterest + saltUsed;
-      const premium = Math.max(0, itemized - inp.standardDeduction);
-      const benefit = inp.marginalTaxRate * premium;
-      // Incremental value of the mortgage interest: the benefit you'd lose if you
-      // dropped the interest and itemized on SALT alone. So it's $0 when the standard
-      // deduction still wins, and the full marginal rate on interest once SALT alone
-      // already clears the standard deduction.
-      const saltOnlyPremium = Math.max(0, saltUsed - inp.standardDeduction);
-      const interestDeductionValue = inp.marginalTaxRate * (premium - saltOnlyPremium);
+      const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
       // credit at end-of-year discount point (use current month's df)
       pv -= benefit / df;
       yrTaxBenefit = benefit;
@@ -263,7 +255,6 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           hoa: yrHoa,
           pmi: yrPmi,
           taxBenefit: yrTaxBenefit,
-          interestDeductionValue,
           homeValue,
           loanBalance: balance,
           equity: homeValue - balance,

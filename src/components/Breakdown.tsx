@@ -2,15 +2,19 @@ import type { YearRow } from "../engine/calculator";
 import { usd } from "../lib/format";
 
 export function Breakdown({ years }: { years: YearRow[] }) {
-  const cols: { key: keyof YearRow; label: string; tone?: "buy" | "rent" | "good" }[] = [
+  const cols: { key: keyof YearRow; label: string; tone?: "buy" | "rent" | "good"; hint?: string }[] = [
     { key: "mortgagePaid", label: "Mortgage" },
     { key: "interestPaid", label: "Interest" },
-    { key: "interestDeductionValue", label: "Interest deduction", tone: "good" },
     { key: "propertyTax", label: "Property tax" },
     { key: "maintenance", label: "Maintenance" },
     { key: "insurance", label: "Insurance" },
     { key: "pmi", label: "PMI" },
-    { key: "taxBenefit", label: "Tax benefit", tone: "good" },
+    {
+      key: "taxBenefit",
+      label: "Tax benefit",
+      tone: "good",
+      hint: "Federal tax saved by itemizing (mortgage interest + SALT) vs. taking the standard deduction.",
+    },
     { key: "rentPaid", label: "Rent (alt.)", tone: "rent" },
     { key: "homeValue", label: "Home value" },
     { key: "equity", label: "Your equity", tone: "good" },
@@ -23,7 +27,11 @@ export function Breakdown({ years }: { years: YearRow[] }) {
           <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
             <th className="sticky left-0 z-10 bg-surface py-2 pr-3 text-left font-semibold">Year</th>
             {cols.map((c) => (
-              <th key={c.key} className="whitespace-nowrap px-3 py-2 font-semibold">
+              <th
+                key={c.key}
+                title={c.hint}
+                className={"whitespace-nowrap px-3 py-2 font-semibold" + (c.hint ? " cursor-help" : "")}
+              >
                 {c.label}
               </th>
             ))}
@@ -41,7 +49,7 @@ export function Breakdown({ years }: { years: YearRow[] }) {
                   c.tone === "good" ? "text-rent-text" : c.tone === "rent" ? "text-muted" : "text-ink";
                 return (
                   <td key={c.key} className={"whitespace-nowrap px-3 py-2 group-hover:bg-paper " + cls}>
-                    {(c.key === "taxBenefit" || c.key === "interestDeductionValue") && v > 0 ? `+${usd(v)}` : usd(v)}
+                    {c.key === "taxBenefit" && v > 0 ? `+${usd(v)}` : usd(v)}
                   </td>
                 );
               })}
