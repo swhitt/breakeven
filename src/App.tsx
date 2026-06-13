@@ -433,9 +433,19 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
       </h1>
       <p className="mt-3 max-w-2xl text-lg text-muted">
         Buying only beats renting if a comparable home rents for more than{" "}
-        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>. Stay longer than{" "}
-        <span className="font-semibold text-ink">{monthsAndYears(result.breakevenYear)}</span> and the math flips toward
-        owning.
+        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>.{" "}
+        {result.breakevenYear == null ? (
+          <>
+            At <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>, owning never catches up,
+            even over the longest horizon shown below.
+          </>
+        ) : (
+          <>
+            Stay longer than{" "}
+            <span className="font-semibold text-ink">{monthsAndYears(result.breakevenYear)}</span> and the math flips
+            toward owning.
+          </>
+        )}
       </p>
     </div>
   );
@@ -466,8 +476,8 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
         <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buy wins above this" />
         <Stat
           label="Breakeven horizon"
-          value={monthsAndYears(result.breakevenYear)}
-          sub="stay longer, buying wins"
+          value={result.breakevenYear == null ? "Never" : monthsAndYears(result.breakevenYear)}
+          sub={result.breakevenYear == null ? "owning never catches up" : "stay longer, buying wins"}
         />
       </div>
       <div className="grid grid-cols-2 border-t border-line bg-surface/60 sm:grid-cols-4">
