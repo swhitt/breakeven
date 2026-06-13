@@ -445,6 +445,8 @@ export function App() {
           <section className="min-w-0 space-y-6">
             <Verdict result={result} inputs={inputs} />
 
+            <MonthlyPayment result={result} />
+
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
               <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="text-base font-bold">Cost of buying vs. renting over time</h3>
@@ -579,6 +581,55 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
         <MiniStat label={`Net cost to buy (${inputs.yearsToStay}y)`} value={usd(result.buyNetCost)} />
         <MiniStat label={`Net cost to rent (${inputs.yearsToStay}y)`} value={usd(result.rentNetCost)} />
       </div>
+    </div>
+  );
+}
+
+// Zillow-style payment breakdown, but netting out the federal tax benefit to a
+// "net effective" monthly figure (Year 1) so the affordability picture is honest.
+function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
+  const y1 = result.years[0];
+  if (!y1) return null;
+  const pni = result.monthlyPayment;
+  const propertyTax = y1.propertyTax / 12;
+  const insurance = y1.insurance / 12;
+  const hoa = y1.hoa / 12;
+  const pmi = y1.pmi / 12;
+  const taxBenefit = y1.taxBenefit / 12;
+  const gross = pni + propertyTax + insurance + hoa + pmi;
+  const net = gross - taxBenefit;
+  const rows: { label: string; value: number; credit?: boolean }[] = [
+    { label: "Principal & interest", value: pni },
+    { label: "Property tax", value: propertyTax },
+    { label: "Home insurance", value: insurance },
+    ...(hoa > 0 ? [{ label: "HOA / other", value: hoa }] : []),
+    ...(pmi > 0 ? [{ label: "PMI", value: pmi }] : []),
+    ...(taxBenefit > 0 ? [{ label: "Tax benefit", value: taxBenefit, credit: true }] : []),
+  ];
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 className="text-base font-bold">Net effective monthly</h3>
+        <div className="text-right">
+          <span className="tnum text-2xl font-extrabold">{usd(net)}</span>
+          <span className="text-base font-semibold text-muted">/mo</span>
+        </div>
+      </div>
+      {taxBenefit > 0 && <p className="mt-0.5 text-right text-xs text-muted">{usd(gross)}/mo before the tax benefit</p>}
+      <dl className="mt-4 space-y-1.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-muted">{r.label}</dt>
+            <dd className={"tnum text-sm font-semibold " + (r.credit ? "text-rent-text" : "text-ink")}>
+              {r.credit ? `-${usd(r.value)}` : usd(r.value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-xs text-muted">
+        Year 1. The tax benefit shrinks as interest falls, so this nudges up over time. Excludes maintenance and the
+        down payment's opportunity cost (both in the full cost model).
+      </p>
     </div>
   );
 }
