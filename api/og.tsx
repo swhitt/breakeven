@@ -31,7 +31,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export default function handler(req: Request) {
-  const id = new URL(req.url).searchParams.get("m") ?? "united-states";
+  // req.url is absolute on a Web request but relative on Node serverless; a base makes
+  // new URL() safe either way.
+  const id = new URL(req.url ?? "/", "https://breakeven.rent").searchParams.get("m") ?? "united-states";
   const locs = locations as LocationData[];
   const loc = locs.find((l) => l.id === id) ?? locs[0];
   const inputs = buildInputs(
