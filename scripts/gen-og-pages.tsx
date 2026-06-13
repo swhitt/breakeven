@@ -154,4 +154,12 @@ for (const loc of locations as LocationData[]) {
   writeFileSync(new URL(`${loc.id}.html`, dist), pageFor(loc.id, d));
   n++;
 }
-console.log(`gen-og-pages: wrote ${n} metro pages + OG cards to dist/`);
+
+// /calc is client-routed too, so cleanUrls needs a calc.html shell (otherwise the clean
+// URL 404s before the SPA rewrite). Give it its own title; the generic OG image is fine.
+const calcHtml = template
+  .replaceAll(TITLE_DEFAULT, "Should you rent or buy? The quick answer, in four numbers")
+  .replaceAll(`"${SITE}/"`, `"${SITE}/calc"`);
+writeFileSync(new URL("calc.html", dist), calcHtml);
+
+console.log(`gen-og-pages: wrote ${n} metro pages + OG cards + calc.html to dist/`);
