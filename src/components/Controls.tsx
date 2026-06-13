@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { CostBasis } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
 import { STANDARD_DEDUCTION } from "../engine/taxConstants";
 import { estimateMarginalRate, STATE_OPTIONS, STATE_TAX } from "../engine/taxRates";
@@ -45,33 +46,34 @@ function SliderRow({
  */
 function CostRow({
   label,
-  mode,
-  onModeChange,
-  rate,
+  basis,
+  onChange,
   rateMax,
   rateStep,
   rateDigits,
-  onRateChange,
-  annual,
   annualStep,
-  onAnnualChange,
   homePrice,
   badge,
 }: {
   label: string;
-  mode: "pct" | "amount";
-  onModeChange: (m: "pct" | "amount") => void;
-  rate: number;
+  basis: CostBasis;
+  onChange: (b: CostBasis) => void;
   rateMax: number;
   rateStep: number;
   rateDigits: number;
-  onRateChange: (n: number) => void;
-  annual: number;
   annualStep: number;
-  onAnnualChange: (n: number) => void;
   homePrice: number;
   badge?: ReactNode;
 }) {
+  const mode = basis.kind === "pctOfValue" ? "pct" : "amount";
+  // Derive the other representation so the hint and a %/$ toggle have a seed and the
+  // displayed figure never jumps across a mode switch.
+  const rate = basis.kind === "pctOfValue" ? basis.rate : homePrice > 0 ? basis.annual / homePrice : 0;
+  const annual = basis.kind === "flatAnnual" ? basis.annual : Math.round(homePrice * basis.rate);
+  const setMode = (m: "pct" | "amount") => {
+    if (m === mode) return;
+    onChange(m === "pct" ? { kind: "pctOfValue", rate } : { kind: "flatAnnual", annual });
+  };
   const header = (
     <span className="flex items-center gap-2">
       {/* Keep the live benchmark badge in both modes; it's the reference you check a
@@ -79,7 +81,7 @@ function CostRow({
       {badge}
       <Segmented
         value={mode}
-        onChange={(v) => onModeChange(v as "pct" | "amount")}
+        onChange={(v) => setMode(v as "pct" | "amount")}
         options={[
           { label: "%", value: "pct" },
           { label: "$", value: "amount" },
@@ -101,11 +103,11 @@ function CostRow({
           min={0}
           max={rateMax}
           step={rateStep}
-          onChange={onRateChange}
+          onChange={(n) => onChange({ kind: "pctOfValue", rate: n })}
           format={(n) => pct(n, rateDigits)}
         />
       ) : (
-        <MoneyInput value={annual} onChange={onAnnualChange} step={annualStep} />
+        <MoneyInput value={annual} onChange={(n) => onChange({ kind: "flatAnnual", annual: n })} step={annualStep} />
       )}
     </Field>
   );
@@ -238,43 +240,6 @@ export function Controls({
 }) {
   const downAmount = inputs.homePrice * inputs.downPaymentPct;
   const pmiOn = inputs.downPaymentPct < 0.2;
-
-  // Carry the current cost across a %/$ toggle so the dollar figure shown doesn't
-  // jump: pct->amount seeds the dollars from the rate, amount->pct does the reverse.
-  const setPropertyTaxMode = (mode: "pct" | "amount") => {
-    if (mode === inputs.propertyTaxMode) return;
-    patch(
-      mode === "amount"
-        ? { propertyTaxMode: mode, propertyTaxAnnual: Math.round(inputs.homePrice * inputs.propertyTaxRate) }
-        : {
-            propertyTaxMode: mode,
-            propertyTaxRate: inputs.homePrice > 0 ? inputs.propertyTaxAnnual / inputs.homePrice : inputs.propertyTaxRate,
-          },
-    );
-  };
-  const setMaintenanceMode = (mode: "pct" | "amount") => {
-    if (mode === inputs.maintenanceMode) return;
-    patch(
-      mode === "amount"
-        ? { maintenanceMode: mode, maintenanceAnnual: Math.round(inputs.homePrice * inputs.maintenanceRate) }
-        : {
-            maintenanceMode: mode,
-            maintenanceRate: inputs.homePrice > 0 ? inputs.maintenanceAnnual / inputs.homePrice : inputs.maintenanceRate,
-          },
-    );
-  };
-  const setInsuranceMode = (mode: "pct" | "amount") => {
-    if (mode === inputs.homeInsuranceMode) return;
-    patch(
-      mode === "amount"
-        ? { homeInsuranceMode: mode, homeInsuranceAnnual: Math.round(inputs.homePrice * inputs.homeInsuranceRate) }
-        : {
-            homeInsuranceMode: mode,
-            homeInsuranceRate:
-              inputs.homePrice > 0 ? inputs.homeInsuranceAnnual / inputs.homePrice : inputs.homeInsuranceRate,
-          },
-    );
-  };
 
   return (
     <div className="space-y-5">
@@ -411,45 +376,33 @@ export function Controls({
           />
           <CostRow
             label="Property tax"
-            mode={inputs.propertyTaxMode}
-            onModeChange={setPropertyTaxMode}
-            rate={inputs.propertyTaxRate}
+            basis={inputs.propertyTax}
+            onChange={(b) => patch({ propertyTax: b })}
             rateMax={0.03}
             rateStep={0.0005}
             rateDigits={2}
-            onRateChange={(n) => patch({ propertyTaxRate: n })}
-            annual={inputs.propertyTaxAnnual}
             annualStep={250}
-            onAnnualChange={(n) => patch({ propertyTaxAnnual: n })}
             homePrice={inputs.homePrice}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
           />
           <CostRow
             label="Maintenance / yr"
-            mode={inputs.maintenanceMode}
-            onModeChange={setMaintenanceMode}
-            rate={inputs.maintenanceRate}
+            basis={inputs.maintenance}
+            onChange={(b) => patch({ maintenance: b })}
             rateMax={0.03}
             rateStep={0.0025}
             rateDigits={1}
-            onRateChange={(n) => patch({ maintenanceRate: n })}
-            annual={inputs.maintenanceAnnual}
             annualStep={250}
-            onAnnualChange={(n) => patch({ maintenanceAnnual: n })}
             homePrice={inputs.homePrice}
           />
           <CostRow
             label="Home insurance / yr"
-            mode={inputs.homeInsuranceMode}
-            onModeChange={setInsuranceMode}
-            rate={inputs.homeInsuranceRate}
+            basis={inputs.homeInsurance}
+            onChange={(b) => patch({ homeInsurance: b })}
             rateMax={0.03}
             rateStep={0.0005}
             rateDigits={2}
-            onRateChange={(n) => patch({ homeInsuranceRate: n })}
-            annual={inputs.homeInsuranceAnnual}
             annualStep={100}
-            onAnnualChange={(n) => patch({ homeInsuranceAnnual: n })}
             homePrice={inputs.homePrice}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
           />

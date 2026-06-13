@@ -10,15 +10,9 @@ const base: CalcInputs = {
   yearsToStay: 9,
   investmentReturn: 0.05,
   inflation: 0.024,
-  propertyTaxMode: "pct",
-  propertyTaxRate: 0.011,
-  propertyTaxAnnual: 4400,
-  maintenanceMode: "pct",
-  maintenanceRate: 0.01,
-  maintenanceAnnual: 4000,
-  homeInsuranceMode: "pct",
-  homeInsuranceRate: 0.005,
-  homeInsuranceAnnual: 2000,
+  propertyTax: { kind: "pctOfValue", rate: 0.011 },
+  maintenance: { kind: "pctOfValue", rate: 0.01 },
+  homeInsurance: { kind: "pctOfValue", rate: 0.005 },
   hoaMonthly: 0,
   extraUtilitiesMonthly: 0,
   buyingClosingPct: 0.03,
@@ -100,31 +94,31 @@ describe("calculate", () => {
     // With a static home value and no inflation, $4,000/yr and 1%-of-$400k are the
     // same stream, so the two modes must produce an identical breakeven.
     const flat = { ...base, homeAppreciation: 0, inflation: 0 };
-    const asPct = calculate({ ...flat, maintenanceMode: "pct", maintenanceRate: 0.01 });
-    const asAmt = calculate({ ...flat, maintenanceMode: "amount", maintenanceAnnual: 4000 });
+    const asPct = calculate({ ...flat, maintenance: { kind: "pctOfValue", rate: 0.01 } });
+    const asAmt = calculate({ ...flat, maintenance: { kind: "flatAnnual", annual: 4000 } });
     expect(asAmt.breakevenRent).toBeCloseTo(asPct.breakevenRent, 4);
   });
 
   it("dollar-mode property tax equals percent-mode when value is flat", () => {
     // $4,400/yr and 1.1%-of-$400k are the same stream with no appreciation/inflation.
     const flat = { ...base, homeAppreciation: 0, inflation: 0 };
-    const asPct = calculate({ ...flat, propertyTaxMode: "pct" as const, propertyTaxRate: 0.011 });
-    const asAmt = calculate({ ...flat, propertyTaxMode: "amount" as const, propertyTaxAnnual: 4400 });
+    const asPct = calculate({ ...flat, propertyTax: { kind: "pctOfValue", rate: 0.011 } });
+    const asAmt = calculate({ ...flat, propertyTax: { kind: "flatAnnual", annual: 4400 } });
     expect(asAmt.breakevenRent).toBeCloseTo(asPct.breakevenRent, 4);
   });
 
   it("a bigger flat insurance figure raises the cost of buying (higher breakeven rent)", () => {
-    const cheap = calculate({ ...base, homeInsuranceMode: "amount", homeInsuranceAnnual: 1000 });
-    const pricey = calculate({ ...base, homeInsuranceMode: "amount", homeInsuranceAnnual: 6000 });
+    const cheap = calculate({ ...base, homeInsurance: { kind: "flatAnnual", annual: 1000 } });
+    const pricey = calculate({ ...base, homeInsurance: { kind: "flatAnnual", annual: 6000 } });
     expect(pricey.breakevenRent).toBeGreaterThan(cheap.breakevenRent);
   });
 
   it("flat-dollar costs ride inflation, not appreciation", () => {
     // Same starting dollar, but percent-mode tracks a fast-appreciating home while
     // amount-mode only tracks (slower) inflation, so percent-mode costs more.
-    const hot = { ...base, homeAppreciation: 0.08, inflation: 0.02, maintenanceAnnual: 4000, maintenanceRate: 0.01 };
-    const pctMode = calculate({ ...hot, maintenanceMode: "pct" });
-    const amtMode = calculate({ ...hot, maintenanceMode: "amount" });
+    const hot = { ...base, homeAppreciation: 0.08, inflation: 0.02 };
+    const pctMode = calculate({ ...hot, maintenance: { kind: "pctOfValue", rate: 0.01 } });
+    const amtMode = calculate({ ...hot, maintenance: { kind: "flatAnnual", annual: 4000 } });
     expect(pctMode.breakevenRent).toBeGreaterThan(amtMode.breakevenRent);
   });
 
@@ -156,7 +150,7 @@ describe("calculate", () => {
     const j = calculate({
       ...base,
       homePrice: 2_000_000,
-      propertyTaxRate: 0,
+      propertyTax: { kind: "pctOfValue", rate: 0 },
       otherSALT: 0,
       standardDeduction: 0,
       capitalGainsRate: 0,

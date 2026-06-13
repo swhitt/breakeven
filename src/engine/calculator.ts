@@ -20,6 +20,22 @@
 
 import { MORTGAGE_INTEREST_DEBT_CAP } from "./taxConstants";
 
+/**
+ * How a recurring ownership cost is expressed. A tagged union so only one
+ * representation exists at a time (no stale sibling field):
+ *   pctOfValue - a fraction of the *current* (appreciating) home value / yr.
+ *   flatAnnual - a flat dollar figure / yr in today's dollars, grown with inflation
+ *                (useful where assessment caps decouple the bill from market value).
+ */
+export type CostBasis = { kind: "pctOfValue"; rate: number } | { kind: "flatAnnual"; annual: number };
+
+/** Monthly cost from a basis: %-of-value rides the home value, flat rides inflation. */
+export function monthlyCostFromBasis(basis: CostBasis, homeValue: number, inflationFactor: number): number {
+  return basis.kind === "flatAnnual"
+    ? (Math.max(0, basis.annual) * inflationFactor) / 12
+    : (homeValue * Math.max(0, basis.rate)) / 12;
+}
+
 export interface CalcInputs {
   // Purchase
   homePrice: number;
@@ -33,21 +49,11 @@ export interface CalcInputs {
   investmentReturn: number; // annual opportunity / discount rate, e.g. 0.05
   inflation: number; // annual, e.g. 0.024
 
-  // Recurring ownership costs.
-  // Property tax, maintenance, and insurance can each be entered two ways (`*Mode`):
-  //   "pct"    - a fraction of the *current* (appreciating) home value / yr.
-  //   "amount" - a flat dollar figure / yr in today's dollars, grown with inflation
-  //              (useful where assessment caps decouple the bill from market value).
-  // The engine reads `*Rate` in pct mode and `*Annual` in amount mode.
-  propertyTaxMode: "pct" | "amount";
-  propertyTaxRate: number; // of current home value / yr, e.g. 0.011
-  propertyTaxAnnual: number; // $/yr in today's dollars, e.g. 4000
-  maintenanceMode: "pct" | "amount";
-  maintenanceRate: number; // of current home value / yr, e.g. 0.01
-  maintenanceAnnual: number; // $/yr in today's dollars, e.g. 4000
-  homeInsuranceMode: "pct" | "amount";
-  homeInsuranceRate: number; // of current home value / yr, e.g. 0.005
-  homeInsuranceAnnual: number; // $/yr in today's dollars, e.g. 1800
+  // Recurring ownership costs. Property tax, maintenance, and insurance each carry
+  // a CostBasis (percent-of-value or flat-annual); see CostBasis above.
+  propertyTax: CostBasis;
+  maintenance: CostBasis;
+  homeInsurance: CostBasis;
   hoaMonthly: number; // grows with inflation
   extraUtilitiesMonthly: number; // owning vs renting delta, grows with inflation
 
@@ -218,18 +224,9 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     // Recurring carrying costs. Percent-of-value items ride the appreciating home
     // value; flat-dollar items (and HOA/utilities) ride inflation instead.
     const infl = Math.pow(1 + inp.inflation, yearFrac);
-    const propTax =
-      inp.propertyTaxMode === "amount"
-        ? (inp.propertyTaxAnnual * infl) / 12
-        : (homeValue * inp.propertyTaxRate) / 12;
-    const maint =
-      inp.maintenanceMode === "amount"
-        ? (inp.maintenanceAnnual * infl) / 12
-        : (homeValue * inp.maintenanceRate) / 12;
-    const ins =
-      inp.homeInsuranceMode === "amount"
-        ? (inp.homeInsuranceAnnual * infl) / 12
-        : (homeValue * inp.homeInsuranceRate) / 12;
+    const propTax = monthlyCostFromBasis(inp.propertyTax, homeValue, infl);
+    const maint = monthlyCostFromBasis(inp.maintenance, homeValue, infl);
+    const ins = monthlyCostFromBasis(inp.homeInsurance, homeValue, infl);
     const hoa = inp.hoaMonthly * infl;
     const util = inp.extraUtilitiesMonthly * infl;
     const pmi = balance / inp.homePrice > 0.8 ? (loan * inp.pmiRate) / 12 : 0;

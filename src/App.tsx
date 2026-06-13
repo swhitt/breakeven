@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { calculate, type CalcInputs } from "./engine/calculator";
+import { calculate, type CalcInputs, type CostBasis } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
@@ -48,15 +48,9 @@ const PERSIST_SPEC = {
   homePrice: "number",
   monthlyRent: "number",
   downPaymentPct: "number",
-  propertyTaxMode: "mode",
-  propertyTaxRate: "number",
-  propertyTaxAnnual: "number",
-  maintenanceMode: "mode",
-  maintenanceRate: "number",
-  maintenanceAnnual: "number",
-  homeInsuranceMode: "mode",
-  homeInsuranceRate: "number",
-  homeInsuranceAnnual: "number",
+  propertyTax: "costBasis",
+  maintenance: "costBasis",
+  homeInsurance: "costBasis",
   marginalTaxRate: "number",
   filingJointly: "boolean",
   standardDeduction: "number",
@@ -64,19 +58,34 @@ const PERSIST_SPEC = {
   annualIncome: "number",
   taxState: "string",
   localTaxRate: "number",
-} as const satisfies Partial<Record<keyof AppInputs, "number" | "mode" | "boolean" | "string">>;
+} as const satisfies Partial<Record<keyof AppInputs, "number" | "boolean" | "string" | "costBasis">>;
 const PERSIST_KEYS = Object.keys(PERSIST_SPEC) as (keyof typeof PERSIST_SPEC)[];
 // Of those, the ones tied to a specific place: cleared when you pick a new metro
 // (the override was for the old location), so they revert to that metro's default.
 // The flat-dollar `*Annual` figures are deliberately NOT here: a number the user
 // typed in $ mode is personal and survives a location switch (see selectLocation).
-const LOCATION_FIELDS: (keyof AppInputs)[] = [
-  "homePrice",
-  "monthlyRent",
-  "propertyTaxRate",
-  "homeInsuranceRate",
-  "taxState",
-];
+const LOCATION_FIELDS: (keyof AppInputs)[] = ["homePrice", "monthlyRent", "propertyTax", "homeInsurance", "taxState"];
+
+// Validate a persisted/shared value as a CostBasis (an object, unlike the other
+// fields), so a tampered token can't smuggle a bad shape into the engine.
+function parseCostBasis(v: unknown): CostBasis | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  if (o.kind === "pctOfValue" && typeof o.rate === "number" && Number.isFinite(o.rate)) {
+    return { kind: "pctOfValue", rate: o.rate };
+  }
+  if (o.kind === "flatAnnual" && typeof o.annual === "number" && Number.isFinite(o.annual)) {
+    return { kind: "flatAnnual", annual: o.annual };
+  }
+  return null;
+}
+
+// Deep-equal for the override diff: CostBasis fields are objects, so === would
+// always read as "changed" and bloat the share link with unchanged defaults.
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a && b && typeof a === "object" && typeof b === "object") return JSON.stringify(a) === JSON.stringify(b);
+  return a === b;
+}
 
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
@@ -106,15 +115,17 @@ function loadOverrides(): Partial<AppInputs> {
           if (typeof n === "number" && Number.isFinite(n)) clean[k] = n as never;
           break;
         }
-        case "mode":
-          if (v === "pct" || v === "amount") clean[k] = v as never;
-          break;
         case "boolean":
           if (typeof v === "boolean") clean[k] = v as never;
           break;
         case "string":
           if (typeof v === "string") clean[k] = v as never;
           break;
+        case "costBasis": {
+          const cb = parseCostBasis(v);
+          if (cb) clean[k] = cb as never;
+          break;
+        }
       }
     }
     return clean;
@@ -152,6 +163,10 @@ function readShareLink(): { loc: LocationData; overrides: Partial<AppInputs> } |
       if (typeof r === "number" && typeof v === "number" && Number.isFinite(v)) overrides[k] = v as never;
       else if (typeof r === "boolean" && typeof v === "boolean") overrides[k] = v as never;
       else if (typeof r === "string" && typeof v === "string") overrides[k] = v as never;
+      else if (typeof r === "object" && r !== null) {
+        const cb = parseCostBasis(v);
+        if (cb) overrides[k] = cb as never;
+      }
     }
     return { loc, overrides };
   } catch {
@@ -219,22 +234,17 @@ export function App() {
     // Set location-derived fields directly (not via patch) so they aren't
     // recorded as manual overrides.
     setInputs((prev) => {
-      const insRate = insurance[loc.state] ?? prev.homeInsuranceRate;
-      const taxRate = propertyTax[loc.state] ?? prev.propertyTaxRate;
+      const insRate = insurance[loc.state] ?? (prev.homeInsurance.kind === "pctOfValue" ? prev.homeInsurance.rate : 0.005);
+      const taxRate = propertyTax[loc.state] ?? (prev.propertyTax.kind === "pctOfValue" ? prev.propertyTax.rate : 0.011);
       return {
         ...prev,
         homePrice: loc.homeValue,
         monthlyRent: loc.rent,
-        propertyTaxRate: taxRate,
-        homeInsuranceRate: insRate,
-        // Re-seed each flat-dollar figure off the new home value ONLY where that field
-        // is in percent mode (the dollars are just a seed there). In amount mode the
-        // number is one the user typed, so it's left alone. Point the estimator here too.
-        propertyTaxAnnual: prev.propertyTaxMode === "amount" ? prev.propertyTaxAnnual : Math.round(loc.homeValue * taxRate),
-        homeInsuranceAnnual:
-          prev.homeInsuranceMode === "amount" ? prev.homeInsuranceAnnual : Math.round(loc.homeValue * insRate),
-        maintenanceAnnual:
-          prev.maintenanceMode === "amount" ? prev.maintenanceAnnual : Math.round(loc.homeValue * prev.maintenanceRate),
+        // Re-point each rate to the new location ONLY where it's still percent-of-value.
+        // A flat-dollar figure is one the user typed, so it's left alone.
+        propertyTax: prev.propertyTax.kind === "pctOfValue" ? { kind: "pctOfValue", rate: taxRate } : prev.propertyTax,
+        homeInsurance:
+          prev.homeInsurance.kind === "pctOfValue" ? { kind: "pctOfValue", rate: insRate } : prev.homeInsurance,
         taxState: loc.state,
       };
     });
@@ -325,7 +335,7 @@ export function App() {
       const defaults = buildInputs(selected, market, propertyTax, insurance);
       const o: Record<string, unknown> = {};
       for (const k of Object.keys(inputs) as (keyof AppInputs)[]) {
-        if (inputs[k] !== defaults[k]) o[k] = inputs[k];
+        if (!valuesEqual(inputs[k], defaults[k])) o[k] = inputs[k];
       }
       const url = `${window.location.origin}${window.location.pathname}?s=${encodeShare({ m: selected.id, o })}`;
       void navigator.clipboard?.writeText(url);

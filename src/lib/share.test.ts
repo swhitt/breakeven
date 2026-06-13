@@ -3,7 +3,7 @@ import { decodeShare, encodeShare } from "./share";
 
 const payload = {
   m: "new-york-ny",
-  o: { homePrice: 850000, downPaymentPct: 0.15, taxState: "NY", taxAuto: true, maintenanceMode: "amount" },
+  o: { homePrice: 850000, downPaymentPct: 0.15, taxState: "NY", taxAuto: true, propertyTax: { kind: "flatAnnual", annual: 12000 } },
 };
 
 describe("share encode/decode", () => {

@@ -47,17 +47,9 @@ export function buildInputs(
     investmentReturn: 0.06,
     inflation: clamp(market.inflation.rate, 0.01, 0.06),
 
-    propertyTaxMode: "pct",
-    propertyTaxRate: propertyTax[loc.state] ?? 0.011,
-    propertyTaxAnnual: Math.round(loc.homeValue * (propertyTax[loc.state] ?? 0.011)),
-    maintenanceMode: "pct",
-    maintenanceRate: 0.01,
-    // Dollar defaults track the percent defaults at today's value, so toggling
-    // %/$ starts from the same number instead of jumping.
-    maintenanceAnnual: Math.round(loc.homeValue * 0.01),
-    homeInsuranceMode: "pct",
-    homeInsuranceRate: insurance[loc.state] ?? 0.005,
-    homeInsuranceAnnual: Math.round(loc.homeValue * (insurance[loc.state] ?? 0.005)),
+    propertyTax: { kind: "pctOfValue", rate: propertyTax[loc.state] ?? 0.011 },
+    maintenance: { kind: "pctOfValue", rate: 0.01 },
+    homeInsurance: { kind: "pctOfValue", rate: insurance[loc.state] ?? 0.005 },
     hoaMonthly: 0,
     extraUtilitiesMonthly: 0,
 

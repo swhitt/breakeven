@@ -216,18 +216,18 @@ export function Derivation({
               <Row
                 label="Property tax"
                 value={
-                  inputs.propertyTaxMode === "amount"
-                    ? `${usd(inputs.propertyTaxAnnual)}/yr`
-                    : `${pct(inputs.propertyTaxRate, 2)} of value`
+                  inputs.propertyTax.kind === "flatAnnual"
+                    ? `${usd(inputs.propertyTax.annual)}/yr`
+                    : `${pct(inputs.propertyTax.rate, 2)} of value`
                 }
                 source={`${selected.state} avg · WalletHub / Census ACS 2024`}
               />
               <Row
                 label="Home insurance"
                 value={
-                  inputs.homeInsuranceMode === "amount"
-                    ? `${usd(inputs.homeInsuranceAnnual)}/yr`
-                    : `${pct(inputs.homeInsuranceRate, 2)} of value`
+                  inputs.homeInsurance.kind === "flatAnnual"
+                    ? `${usd(inputs.homeInsurance.annual)}/yr`
+                    : `${pct(inputs.homeInsurance.rate, 2)} of value`
                 }
                 source={`${selected.state} avg · NAIC HO-3 / Zillow ZHVI`}
               />
