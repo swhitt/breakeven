@@ -58,7 +58,6 @@ export interface CalcInputs {
   maintenance: CostBasis;
   homeInsurance: CostBasis;
   hoaMonthly: number; // grows with inflation
-  extraUtilitiesMonthly: number; // owning vs renting delta, grows with inflation
 
   // Transaction costs
   buyingClosingPct: number; // of price, e.g. 0.03
@@ -131,12 +130,12 @@ export const RECURRING_COSTS: RecurringCost[] = [
     monthly: (i, c) => monthlyCostFromBasis(i.homeInsurance, c.homeValue, c.inflationFactor),
   },
   {
-    // HOA dues plus the owning-vs-renting utilities delta, both inflation-grown.
+    // HOA dues (and any other flat monthly owning cost), inflation-grown.
     key: "hoa",
     label: "HOA / other",
     side: "buy",
     inHousingPayment: true,
-    monthly: (i, c) => (i.hoaMonthly + i.extraUtilitiesMonthly) * c.inflationFactor,
+    monthly: (i, c) => i.hoaMonthly * c.inflationFactor,
   },
   {
     // While LTV (against the original price) is over 80%, charged on the original loan.

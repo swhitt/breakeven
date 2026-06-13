@@ -14,7 +14,6 @@ const base: CalcInputs = {
   maintenance: { kind: "pctOfValue", rate: 0.01 },
   homeInsurance: { kind: "pctOfValue", rate: 0.005 },
   hoaMonthly: 0,
-  extraUtilitiesMonthly: 0,
   buyingClosingPct: 0.03,
   sellingCostPct: 0.06,
   pmiRate: 0.0058,

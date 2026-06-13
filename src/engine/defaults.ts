@@ -51,7 +51,6 @@ export function buildInputs(
     maintenance: { kind: "pctOfValue", rate: 0.01 },
     homeInsurance: { kind: "pctOfValue", rate: insurance[loc.state] ?? 0.005 },
     hoaMonthly: 0,
-    extraUtilitiesMonthly: 0,
 
     buyingClosingPct: 0.03,
     sellingCostPct: 0.06,
