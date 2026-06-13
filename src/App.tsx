@@ -165,6 +165,7 @@ export function App() {
   // the link is authoritative for the page and Reset exits the shared view.
   const shareActive = useRef(SHARE != null);
   const [copied, setCopied] = useState(false);
+  const [justReset, setJustReset] = useState(false);
   // True once the user edits any input; gates the one-time re-seed from live data.
   const touched = useRef(false);
   const [market, setMarket] = useState<MarketData>(() => marketRaw as MarketData);
@@ -266,6 +267,10 @@ export function App() {
   // Reset = back to your locale's defaults: drop manual edits and return to the
   // auto-detected home metro (re-detecting if we don't have it remembered yet).
   function reset() {
+    // Flash a confirmation so the click clearly registers (the inputs may snap back
+    // to values that already matched, leaving no other visible change).
+    setJustReset(true);
+    window.setTimeout(() => setJustReset(false), 1500);
     // Leaving a shared view: resume normal persistence and drop the ?s= token so a
     // reload doesn't snap back to it.
     if (shareActive.current) {
@@ -425,22 +430,40 @@ export function App() {
                 <button
                   type="button"
                   onClick={reset}
+                  aria-live="polite"
                   title="Reset to your location's defaults"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+                  className={
+                    "inline-flex items-center gap-1 text-xs font-medium transition-colors " +
+                    (justReset ? "text-rent-text" : "text-muted hover:text-ink")
+                  }
                 >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                  Reset
+                  {justReset ? (
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12l4 4 10-10" />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+                      <path d="M3 3v5h5" />
+                    </svg>
+                  )}
+                  {justReset ? "Reset!" : "Reset"}
                 </button>
               </div>
             </div>
