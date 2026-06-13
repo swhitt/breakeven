@@ -26,6 +26,9 @@ const CrossoverChart = lazy(() =>
 const AdvantageChart = lazy(() =>
   import("./components/AdvantageChart").then((m) => ({ default: m.AdvantageChart })),
 );
+const CostCompositionChart = lazy(() =>
+  import("./components/CostCompositionChart").then((m) => ({ default: m.CostCompositionChart })),
+);
 
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
@@ -515,6 +518,17 @@ export function App() {
                   breakevenYear={result.breakevenYear}
                   yearsToStay={inputs.yearsToStay}
                 />
+              </Suspense>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+              <h3 className="text-base font-bold">Where each year's payment goes</h3>
+              <p className="mb-4 mt-1 text-sm text-muted">
+                Every year you own, split into where the money lands. Interest dominates early and fades as principal
+                (which builds equity, not a sunk cost) takes over{inputs.yearsToStay === 1 ? "" : " across your stay"}.
+              </p>
+              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
+                <CostCompositionChart years={result.years} />
               </Suspense>
             </div>
           </section>

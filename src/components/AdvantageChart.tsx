@@ -12,28 +12,13 @@ import {
 } from "recharts";
 import type { HorizonPoint } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
+import { niceTicks } from "../lib/ticks";
 
 interface GapRow {
   year: number;
   buy: number; // buyNetCost, carried so the tooltip can show the magnitudes too
   rent: number; // rentNetCost
   gap: number; // rent - buy: positive => buying is ahead by this much
-}
-
-/** A 1/2/5-rounded step so axis labels land on clean numbers (and on zero). */
-function niceStep(range: number, target = 5): number {
-  const raw = Math.max(range, 1) / target;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const norm = raw / mag;
-  return (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
-}
-
-/** Evenly-spaced ticks across [min, max]; always hits zero when the range spans it. */
-function niceTicks(min: number, max: number): number[] {
-  const step = niceStep(max - min);
-  const out: number[] = [];
-  for (let t = Math.ceil(min / step) * step; t <= max + step * 1e-6; t += step) out.push(Math.round(t));
-  return out;
 }
 
 /** Rich tooltip: the two totals and the signed advantage between them, in one card. */
