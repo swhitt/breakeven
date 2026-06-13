@@ -113,6 +113,13 @@ export function App() {
     }
   }
 
+  // Drop every manual edit and rebuild from the selected location's defaults.
+  function reset() {
+    overrides.current = {};
+    saveOverrides({});
+    setInputs(buildInputs(selected, market, propertyTax, insurance));
+  }
+
   // First visit with no saved metro: auto-detect from IP (silent fallback to US).
   const detected = useRef(false);
   useEffect(() => {
@@ -144,7 +151,29 @@ export function App() {
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
           <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-6 lg:self-start">
-            <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-muted">Your situation</h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-muted">Your situation</h2>
+              <button
+                type="button"
+                onClick={reset}
+                title="Reset every input to the defaults for the selected location"
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+                Reset
+              </button>
+            </div>
             <Controls
               inputs={inputs}
               patch={patch}

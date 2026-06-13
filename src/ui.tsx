@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 /** Field label + optional hint/live-data badge, wrapping any control. */
 export function Field({
@@ -44,12 +44,15 @@ export function MoneyInput({
   onChange: (n: number) => void;
   step?: number;
 }) {
-  const [text, setText] = useState(value.toLocaleString("en-US"));
-  const focused = useRef(false);
+  const [text, setText] = useState(() => value.toLocaleString("en-US"));
 
+  // Sync with external changes (location switch, reset) without disrupting
+  // typing: only rewrite when the shown number actually diverges from `value`.
+  // During typing the two stay equal, so this never fights the cursor.
   useEffect(() => {
-    if (!focused.current) setText(value.toLocaleString("en-US"));
-  }, [value]);
+    const shown = Number(text.replace(/[^0-9]/g, ""));
+    if (shown !== value) setText(value ? value.toLocaleString("en-US") : "");
+  }, [value, text]);
 
   return (
     <div className="flex items-center rounded-lg border border-line bg-surface focus-within:border-ink focus-within:ring-2 focus-within:ring-ink/10">
@@ -58,11 +61,6 @@ export function MoneyInput({
         inputMode="numeric"
         className="tnum w-full bg-transparent py-2.5 pr-3 text-[15px] font-medium outline-none"
         value={text}
-        onFocus={() => (focused.current = true)}
-        onBlur={() => {
-          focused.current = false;
-          setText(value.toLocaleString("en-US"));
-        }}
         onChange={(e) => {
           const raw = e.target.value.replace(/[^0-9]/g, "");
           setText(raw === "" ? "" : Number(raw).toLocaleString("en-US"));
