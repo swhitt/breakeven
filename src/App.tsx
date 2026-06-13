@@ -383,8 +383,17 @@ export function App() {
       <main className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
         <Hero metro={selected.metro} result={result} inputs={inputs} />
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
-          <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-6 lg:self-start">
+        {/* On mobile the controls stack above the results, so surface a one-line
+            verdict up top for immediate feedback (hidden on lg, where the full
+            Verdict sits beside the controls). */}
+        <div className="mt-6 lg:hidden">
+          <CondensedVerdict result={result} inputs={inputs} />
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:mt-8 lg:grid-cols-[minmax(0,380px)_1fr]">
+          {/* Sticky offset clears the ~57px sticky header (was top-6, which let the
+              header overlap the panel's first line). */}
+          <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-[72px] lg:self-start">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wide text-muted">Your situation</h2>
               <div className="flex items-center gap-3">
@@ -453,8 +462,8 @@ export function App() {
                 <Legend />
               </div>
               <p className="mb-4 text-sm text-muted">
-                Net cost in today's dollars if you sell and move out after each year. Where the lines cross is the
-                point buying pulls ahead.
+                Total net cost, in today's dollars, if you sold and moved out after each year. Where the lines cross is
+                the point buying pulls ahead; the faint dot marks the year you said you'll stay.
               </p>
               <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
                 <CrossoverChart
@@ -469,10 +478,10 @@ export function App() {
 
         {/* Full-width so the wide tables have room to breathe. */}
         <div className="mt-6 space-y-3">
-          <Disclosure summary="Show how your rates are derived">
+          <Disclosure summary="How your rates are derived">
             <Derivation inputs={inputs} result={result} market={market} selected={selected} />
           </Disclosure>
-          <Disclosure summary="Show the year-by-year math">
+          <Disclosure summary="Year-by-year breakdown">
             <Breakdown years={result.years} />
           </Disclosure>
         </div>
@@ -546,9 +555,38 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
   );
 }
 
+// A one-line verdict for mobile, shown above the controls so there's immediate
+// feedback without scrolling past every input first.
+function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
+  const renting = result.verdict === "rent";
+  const closeCall = Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
+  return (
+    <div
+      className={
+        "flex items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-sm " +
+        (renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
+      }
+    >
+      <div>
+        <div className={"text-[11px] font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
+          Verdict
+        </div>
+        <div className="text-lg font-extrabold">{closeCall ? "Toss-up" : renting ? "Rent it" : "Buy it"}</div>
+      </div>
+      <div className="text-right">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Breakeven rent</div>
+        <div className="tnum text-lg font-bold">{usd(result.breakevenRent)}/mo</div>
+      </div>
+    </div>
+  );
+}
+
 function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const renting = result.verdict === "rent";
   const diff = Math.abs(result.monthlyDifference);
+  // Within 5% of the breakeven the verdict is a near-tie; say so instead of quoting
+  // a dollar gap that reads like a real rent-vs-buy advantage.
+  const closeCall = diff < inputs.monthlyRent * 0.05;
   return (
     <div
       className={
@@ -561,11 +599,13 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
           <div className={"text-xs font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
             Verdict
           </div>
-          <div className="mt-1 text-2xl font-extrabold">{renting ? "Rent it" : "Buy it"}</div>
+          <div className="mt-1 text-2xl font-extrabold">{closeCall ? "Toss-up" : renting ? "Rent it" : "Buy it"}</div>
           <p className="mt-1 text-sm text-muted">
-            {renting
-              ? `Renting saves about ${usd(diff)}/mo vs. the breakeven.`
-              : `Buying saves about ${usd(diff)}/mo vs. renting.`}
+            {closeCall
+              ? "Basically a wash, sensitive to your assumptions."
+              : renting
+                ? `Your rent is about ${usd(diff)}/mo below the breakeven.`
+                : `Your rent is about ${usd(diff)}/mo above the breakeven.`}
           </p>
         </div>
         <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buy wins above this" />
@@ -576,10 +616,10 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
         />
       </div>
       <div className="grid grid-cols-2 border-t border-line bg-surface/60 sm:grid-cols-4">
-        <MiniStat label="Monthly payment" value={usd(result.monthlyPayment)} />
+        <MiniStat label="P&I / mo" value={usd(result.monthlyPayment)} />
         <MiniStat label="Loan amount" value={usd(result.loanAmount)} />
-        <MiniStat label={`Net cost to buy (${inputs.yearsToStay}y)`} value={usd(result.buyNetCost)} />
-        <MiniStat label={`Net cost to rent (${inputs.yearsToStay}y)`} value={usd(result.rentNetCost)} />
+        <MiniStat label={`Buy total · ${inputs.yearsToStay}yr`} value={usd(result.buyNetCost)} />
+        <MiniStat label={`Rent total · ${inputs.yearsToStay}yr`} value={usd(result.rentNetCost)} />
       </div>
     </div>
   );
@@ -587,7 +627,9 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
 
 // Zillow-style payment breakdown, but netting out the federal tax benefit to a
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
+// The headline says what it is; the itemized lines live behind an expander.
 function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
+  const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
   const pni = result.monthlyPayment;
@@ -606,30 +648,66 @@ function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
     ...(pmi > 0 ? [{ label: "PMI", value: pmi }] : []),
     ...(taxBenefit > 0 ? [{ label: "Tax benefit", value: taxBenefit, credit: true }] : []),
   ];
+  // Name exactly what's in the number so "net effective" isn't a mystery.
+  const parts = ["principal & interest", "property tax", "insurance", ...(hoa > 0 ? ["HOA"] : []), ...(pmi > 0 ? ["PMI"] : [])];
+  const included = parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
+
   return (
     <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 className="text-base font-bold">Net effective monthly</h3>
+        <h3 className="text-base font-bold">Net effective monthly payment</h3>
         <div className="text-right">
           <span className="tnum text-2xl font-extrabold">{usd(net)}</span>
           <span className="text-base font-semibold text-muted">/mo</span>
         </div>
       </div>
-      {taxBenefit > 0 && <p className="mt-0.5 text-right text-xs text-muted">{usd(gross)}/mo before the tax benefit</p>}
-      <dl className="mt-4 space-y-1.5">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-muted">{r.label}</dt>
-            <dd className={"tnum text-sm font-semibold " + (r.credit ? "text-rent-text" : "text-ink")}>
-              {r.credit ? `-${usd(r.value)}` : usd(r.value)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 text-xs text-muted">
-        Year 1. The tax benefit shrinks as interest falls, so this nudges up over time. Excludes maintenance and the
-        down payment's opportunity cost (both in the full cost model).
+      <p className="mt-1 text-sm text-muted">
+        Your all-in monthly housing payment ({included})
+        {taxBenefit > 0 ? (
+          <>
+            {" "}
+            minus the estimated federal tax benefit, so <span className="text-ink">{usd(gross)}/mo</span> before it.
+          </>
+        ) : (
+          " in year 1."
+        )}
       </p>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-muted transition-colors hover:text-ink"
+      >
+        {open ? "Hide" : "Show"} the breakdown
+        <svg
+          className={"h-3.5 w-3.5 transition-transform " + (open ? "rotate-180" : "")}
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <dl className="mt-3 space-y-1.5 border-t border-line/60 pt-3">
+            {rows.map((r) => (
+              <div key={r.label} className="flex items-baseline justify-between gap-3">
+                <dt className="text-sm text-muted">{r.label}</dt>
+                <dd className={"tnum text-sm font-semibold " + (r.credit ? "text-rent-text" : "text-ink")}>
+                  {r.credit ? `-${usd(r.value)}` : usd(r.value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-muted">
+            Year 1, from the property tax, insurance, and HOA figures you entered. The tax benefit shrinks as interest
+            falls, so this nudges up over time. Excludes maintenance and the down payment's opportunity cost (both in
+            the full cost model).
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -657,10 +735,10 @@ function Legend() {
   return (
     <div className="flex items-center gap-4 text-xs">
       <span className="flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-buy" /> Buying
+        <span className="inline-block h-0.5 w-4 rounded bg-buy" /> Buying
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-rent" /> Renting
+        <span className="inline-block w-4 border-t-2 border-dashed border-rent" /> Renting
       </span>
     </div>
   );

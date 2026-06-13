@@ -58,6 +58,25 @@
   ::selection {
     background: var(--color-rent-soft);
   }
+  /* Visible keyboard focus on every interactive element (was invisible). */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  /* Respect users who ask for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @utility tnum {
@@ -73,6 +92,20 @@ input[type="range"] {
   border-radius: 9999px;
   background: var(--color-line);
   cursor: pointer;
+  /* Let a vertical drag that starts on the thumb still scroll the page on touch. */
+  touch-action: pan-y;
+}
+/* Ring the thumb on keyboard focus (the track itself can't show :focus-visible well). */
+input[type="range"]:focus-visible {
+  outline: none;
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
