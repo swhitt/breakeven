@@ -446,13 +446,13 @@ function Sources() {
     },
     {
       label: "Property tax",
-      value: "Tax Foundation, Property Taxes by State & County (2024 ACS)",
-      href: "https://taxfoundation.org/data/all/state/property-taxes-by-state-county/",
+      value: "WalletHub / Census ACS 2024, median effective rate by state",
+      href: "https://wallethub.com/edu/states-with-the-highest-and-lowest-property-taxes/11585",
     },
     {
       label: "Home insurance",
-      value: "Bankrate / Zillow ZHVI, effective rate by state (a floor in high-value states)",
-      href: "https://www.bankrate.com/insurance/homeowners-insurance/states/",
+      value: "NAIC HO-3 premiums / Zillow ZHVI, effective rate by state",
+      href: "https://www.iii.org/fact-statistic/facts-statistics-homeowners-and-renters-insurance",
     },
     {
       label: "Capital gains",

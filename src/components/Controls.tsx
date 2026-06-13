@@ -2,9 +2,6 @@ import type { ReactNode } from "react";
 import type { CalcInputs } from "../engine/calculator";
 import { STANDARD_DEDUCTION } from "../engine/taxConstants";
 import type { LocationData, MarketData } from "../data/types";
-
-// States where the $300k-coverage insurance premium understates replacement cost.
-const HIGH_VALUE_INSURANCE_STATES = new Set(["CA", "HI", "MA", "WA", "NY", "NJ"]);
 import { pct, usd } from "../lib/format";
 import { Disclosure, Field, LiveBadge, MoneyInput, Segmented, Slider } from "../ui";
 import { LocationPicker } from "./LocationPicker";
@@ -218,11 +215,6 @@ export function Controls({
             onChange={(n) => patch({ homeInsuranceRate: n })}
             format={(n) => pct(n, 2)}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
-            hint={
-              HIGH_VALUE_INSURANCE_STATES.has(selected.state)
-                ? "Default assumes $300k coverage; insuring a high-value home to replacement cost costs more, so bump this."
-                : undefined
-            }
           />
           <SliderRow
             label="Marginal tax rate"

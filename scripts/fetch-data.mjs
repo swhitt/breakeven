@@ -42,89 +42,49 @@ const URLS = {
 const MAX_METROS = 400;
 
 // ---------------------------------------------------------------------------
-// Property tax: effective rate on owner-occupied housing by state.
-// Curated from Tax Foundation "Property Taxes by State" (2024 ACS data).
-// Changes slowly, so no live fetch needed; baked straight into the output.
+// Property tax: effective rate = median real-estate taxes paid / median home
+// value, by state (the methodology a homeowner actually experiences). From
+// WalletHub's 2026 ranking, built on Census ACS 2024 medians; cross-checked
+// against an independent ACS table. Changes slowly, so it's baked in.
+// Note: Tax Foundation's report reads ~0.2-0.3pp lower because it uses
+// dollar-weighted statewide aggregation, not the median-of-medians ratio.
 // ---------------------------------------------------------------------------
 const PROPERTY_TAX = {
   _source:
-    "Tax Foundation, Property Taxes by State & County, effective rate on owner-occupied housing (2024 ACS 5-year estimates)",
+    "WalletHub 'Property Taxes by State in 2026' (median real-estate taxes / median home value, U.S. Census ACS 2024)",
   _asOf: "2024",
-  AL: 0.0037,
-  AK: 0.0094,
-  AZ: 0.0048,
-  AR: 0.0056,
-  CA: 0.007,
-  CO: 0.005,
-  CT: 0.0154,
-  DE: 0.0054,
-  DC: 0.0057,
-  FL: 0.0078,
-  GA: 0.0079,
-  HI: 0.0029,
-  ID: 0.005,
-  IL: 0.0188,
-  IN: 0.0076,
-  IA: 0.0133,
-  KS: 0.0121,
-  KY: 0.0074,
-  LA: 0.0055,
-  ME: 0.0098,
-  MD: 0.0092,
-  MA: 0.01,
-  MI: 0.0119,
-  MN: 0.01,
-  MS: 0.0058,
-  MO: 0.0089,
-  MT: 0.0061,
-  NE: 0.0144,
-  NV: 0.005,
-  NH: 0.015,
-  NJ: 0.0188,
-  NM: 0.0063,
-  NY: 0.013,
-  NC: 0.0066,
-  ND: 0.0092,
-  OH: 0.0136,
-  OK: 0.0079,
-  OR: 0.0081,
-  PA: 0.0126,
-  RI: 0.0112,
-  SC: 0.0049,
-  SD: 0.01,
-  TN: 0.0052,
-  TX: 0.014,
-  UT: 0.0048,
-  VT: 0.0151,
-  VA: 0.0078,
-  WA: 0.0075,
-  WV: 0.0051,
-  WI: 0.0132,
-  WY: 0.0053,
+  AL: 0.0038, AK: 0.0111, AZ: 0.0048, AR: 0.0055, CA: 0.007, CO: 0.0048,
+  CT: 0.0181, DE: 0.005, DC: 0.0058, FL: 0.0076, GA: 0.0077, HI: 0.0027,
+  ID: 0.0049, IL: 0.0201, IN: 0.0074, IA: 0.0139, KS: 0.0129, KY: 0.0075,
+  LA: 0.0055, ME: 0.0102, MD: 0.0097, MA: 0.0107, MI: 0.0125, MN: 0.0102,
+  MS: 0.0072, MO: 0.0085, MT: 0.0072, NE: 0.0149, NV: 0.0047, NH: 0.0166,
+  NJ: 0.0211, NM: 0.007, NY: 0.0155, NC: 0.0066, ND: 0.0099, OH: 0.0131,
+  OK: 0.008, OR: 0.0081, PA: 0.013, RI: 0.0121, SC: 0.0048, SD: 0.0106,
+  TN: 0.005, TX: 0.0149, UT: 0.0052, VT: 0.0159, VA: 0.0073, WA: 0.0081,
+  WV: 0.0053, WI: 0.0142, WY: 0.0057,
 };
 
 // ---------------------------------------------------------------------------
-// Homeowner's insurance: effective rate (avg annual premium as a fraction of
-// home value) by state. Premiums from Bankrate state averages ($300k dwelling,
-// Nov 2025); home values from Zillow ZHVI (Jul 2025). Curated, changes slowly.
-// Caveat: the flat $300k coverage understates high-value states (CA, HI, MA,
-// WA), so treat those as a floor. Users can override via the slider.
+// Homeowner's insurance: effective rate (avg annual premium / typical home
+// value) by state. Premiums from NAIC HO-3 averages (actual policies, so
+// coverage scales with the home, unlike flat-$300k quote tables that deflate
+// high-value states), escalated to mid-2026 and divided by Zillow ZHVI typical
+// home values; CA/FL anchored to Insurify 2025 actual-coverage averages where
+// the uniform escalator understated post-2022 catastrophe pricing. Baked in.
 // ---------------------------------------------------------------------------
 const INSURANCE = {
   _source:
-    "Effective rate = avg annual home insurance premium / typical home value. " +
-    "Premiums: Bankrate state averages ($300k dwelling, Nov 2025). " +
-    "Home values: Zillow ZHVI (Jul 2025).",
-  _asOf: "2025",
-  AL: 0.0113, AK: 0.0024, AZ: 0.0047, AR: 0.0137, CA: 0.0021, CO: 0.0065,
-  CT: 0.0036, DE: 0.0019, DC: 0.0012, FL: 0.0213, GA: 0.006, HI: 0.0013,
-  ID: 0.0028, IL: 0.007, IN: 0.0063, IA: 0.009, KS: 0.0153, KY: 0.0147,
-  LA: 0.0266, ME: 0.0028, MD: 0.0034, MA: 0.0023, MI: 0.0095, MN: 0.0071,
-  MS: 0.013, MO: 0.0077, MT: 0.0056, NE: 0.0221, NV: 0.0021, NH: 0.0018,
-  NJ: 0.0019, NM: 0.0055, NY: 0.0041, NC: 0.0046, ND: 0.0084, OH: 0.0053,
-  OK: 0.0185, OR: 0.0019, PA: 0.0041, RI: 0.0044, SC: 0.0056, SD: 0.0088,
-  TN: 0.0067, TX: 0.008, UT: 0.0022, VT: 0.0019, VA: 0.0033, WA: 0.0023,
-  WV: 0.0057, WI: 0.0034, WY: 0.0035,
+    "NAIC HO-3 average premiums (2022, via III) escalated to mid-2026, / Zillow ZHVI typical home value (Apr 2026); CA/FL anchored to Insurify 2025 actual-coverage averages",
+  _asOf: "2026",
+  AL: 0.01, AK: 0.0039, AZ: 0.0033, AR: 0.0106, CA: 0.0038, CO: 0.0052,
+  CT: 0.0056, DE: 0.0037, DC: 0.0032, FL: 0.0186, GA: 0.0067, HI: 0.0023,
+  ID: 0.0028, IL: 0.0063, IN: 0.0063, IA: 0.0073, KS: 0.0087, KY: 0.0079,
+  LA: 0.0164, ME: 0.0035, MD: 0.0044, MA: 0.0038, MI: 0.0054, MN: 0.0068,
+  MS: 0.0133, MO: 0.0085, MT: 0.0047, NE: 0.0091, NV: 0.0029, NH: 0.0032,
+  NJ: 0.0034, NM: 0.0056, NY: 0.0043, NC: 0.0065, ND: 0.0063, OH: 0.0055,
+  OK: 0.0138, OR: 0.0024, PA: 0.0053, RI: 0.0056, SC: 0.007, SD: 0.0074,
+  TN: 0.006, TX: 0.0107, UT: 0.0023, VT: 0.0038, VA: 0.0044, WA: 0.0026,
+  WV: 0.009, WI: 0.0039, WY: 0.0059,
 };
 
 // ---------------------------------------------------------------------------
