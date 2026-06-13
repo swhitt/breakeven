@@ -598,7 +598,10 @@ function Header({ market }: { market: MarketData }) {
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-extrabold tracking-tight">Breakeven</span>
+          <span className="text-lg font-extrabold tracking-tight">
+            <span className="text-rent">break</span>
+            <span className="text-buy">Even</span>
+          </span>
           <span className="hidden text-sm text-muted sm:inline">rent vs. buy, with the math shown</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
