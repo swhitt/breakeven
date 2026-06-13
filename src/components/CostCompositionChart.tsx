@@ -15,17 +15,21 @@ import { niceTicks } from "../lib/ticks";
 // Owning's annual cash goes into these buckets. Interest dominates early and fades
 // as principal (which builds equity, not a sunk cost) grows: the headline story.
 // PMI/HOA are dropped when no year has them, like the breakdown table.
+// This chart is entirely the BUYING side, so orange (= buy) reading as interest is
+// fine. But teal (= rent in the other charts) must NOT appear here, so principal uses
+// emerald, distinct from both the rent teal and the credit's cyan.
 const BUCKETS = [
-  { key: "interestPaid", label: "Interest", color: "#f97316" },
+  { key: "interestPaid", label: "Interest", color: "#ea580c" },
   { key: "propertyTax", label: "Property tax", color: "#eab308" },
   { key: "insurance", label: "Insurance", color: "#3b82f6" },
   { key: "maintenance", label: "Maintenance", color: "#8b5cf6" },
   { key: "pmi", label: "PMI", color: "#ef4444" },
   { key: "hoa", label: "HOA / other", color: "#ec4899" },
-  { key: "principalPaid", label: "Principal (equity)", color: "#14b8a6" },
+  { key: "principalPaid", label: "Principal (equity)", color: "#10b981" },
 ] as const;
 
-const CREDIT_COLOR = "#22c55e";
+const EQUITY_COLOR = "#10b981";
+const CREDIT_COLOR = "#0891b2";
 
 type Bucket = (typeof BUCKETS)[number];
 
@@ -84,7 +88,7 @@ function CompositionTooltip({
       </div>
       <div className="flex items-baseline justify-between gap-6">
         <span className="text-muted">Builds equity</span>
-        <span className="tnum font-semibold" style={{ color: "#14b8a6" }}>
+        <span className="tnum font-semibold" style={{ color: EQUITY_COLOR }}>
           {usd(y.principalPaid)}
         </span>
       </div>
@@ -130,7 +134,13 @@ export function CostCompositionChart({ years }: { years: YearRow[] }) {
         aria-label={`Where each year's home payment goes, broken into ${buckets.map((b) => b.label).join(", ")}${showCredit ? ", less the federal tax benefit" : ""}, over ${years.length} years. Interest is largest early and shrinks as principal grows.`}
       >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} margin={{ top: 8, right: 8, left: 4, bottom: 0 }} barCategoryGap="18%" accessibilityLayer>
+        <BarChart
+          data={rows}
+          margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+          barCategoryGap="18%"
+          stackOffset="sign"
+          accessibilityLayer
+        >
           <CartesianGrid stroke="var(--color-line)" vertical={false} />
           <XAxis
             dataKey="year"
