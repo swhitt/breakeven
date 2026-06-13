@@ -29,6 +29,9 @@ const AdvantageChart = lazy(() =>
 const CostCompositionChart = lazy(() =>
   import("./components/CostCompositionChart").then((m) => ({ default: m.CostCompositionChart })),
 );
+const SensitivityChart = lazy(() =>
+  import("./components/SensitivityChart").then((m) => ({ default: m.SensitivityChart })),
+);
 
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
@@ -549,6 +552,17 @@ export function App() {
               </p>
               <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
                 <CostCompositionChart years={result.years} />
+              </Suspense>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+              <h3 className="text-base font-bold">What actually moves the answer</h3>
+              <p className="mb-4 mt-1 text-sm text-muted">
+                Each bar swings one uncertain assumption across a realistic range and shows how far the breakeven rent
+                moves. Widest bars are what your verdict hangs on; any crossing your rent could flip it.
+              </p>
+              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
+                <SensitivityChart inputs={inputsForCalc} monthlyRent={inputs.monthlyRent} />
               </Suspense>
             </div>
           </section>
