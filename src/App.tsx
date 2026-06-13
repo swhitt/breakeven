@@ -383,7 +383,6 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // First visit with no saved metro: auto-detect from IP (silent fallback to US).
@@ -415,7 +414,6 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
