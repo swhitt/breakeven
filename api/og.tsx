@@ -10,7 +10,8 @@ import insurance from "../src/data/insurance.json";
 
 // Renders a per-metro Open Graph card from the actual engine verdict, so a shared
 // /houston-tx link unfurls with Houston's real numbers instead of a generic image.
-export const config = { runtime: "edge" };
+// Node serverless (not edge): a plain Vite project's edge functions can't bundle
+// imports from outside api/, but the Node runtime can.
 
 const INK = "#1a1a16";
 const MUTED = "#6b6a61";
