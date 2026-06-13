@@ -29,9 +29,14 @@ A scheduled GitHub Action pulls fresh public data on each deploy and weekly ther
 | Inflation | BLS CPI-U |
 | Home-price appreciation | Zillow ZHVI national CAGR |
 | Property tax by state | Tax Foundation (2024 effective rates) |
+| Home insurance by state | Bankrate state averages / Zillow ZHVI (effective rate) |
 | Capital-gains exclusion | IRS Topic 701 |
 
 The fetcher ([`scripts/fetch-data.mjs`](scripts/fetch-data.mjs)) is zero-dependency Node. Each source is fetched independently and falls back to the last committed value if it's unreachable, so a flaky upstream never breaks a deploy.
+
+**Location-aware.** The site auto-detects the visitor's metro from a keyless IP lookup on first load (silent fallback to the national figures, choice remembered in `localStorage`), then prefills home price, rent, property tax, and insurance for that location. This is the only runtime network call; everything else is baked at build time.
+
+**Historical record.** Each sync appends a dated national snapshot (rates, prices, rent, inflation, appreciation) to [`src/data/history.json`](src/data/history.json), deduped by date. CI commits it back, so a time series accumulates across the weekly runs.
 
 ## Develop
 

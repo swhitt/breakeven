@@ -207,10 +207,11 @@ export function Controls({
               label="Home insurance / yr"
               value={inputs.homeInsuranceRate}
               min={0}
-              max={0.02}
+              max={0.03}
               step={0.0005}
               onChange={(n) => patch({ homeInsuranceRate: n })}
               format={(n) => pct(n, 2)}
+              badge={<LiveBadge>{selected.state} avg</LiveBadge>}
             />
           </div>
           <SliderRow

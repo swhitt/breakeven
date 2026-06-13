@@ -18,6 +18,7 @@ const DATA_DIR = join(__dirname, "..", "src", "data");
 const MARKET_PATH = join(DATA_DIR, "market.json");
 const LOCATIONS_PATH = join(DATA_DIR, "locations.json");
 const PROPERTY_TAX_PATH = join(DATA_DIR, "propertyTax.json");
+const INSURANCE_PATH = join(DATA_DIR, "insurance.json");
 const HISTORY_PATH = join(DATA_DIR, "history.json");
 
 const FETCH_TIMEOUT_MS = 20_000;
@@ -100,6 +101,30 @@ const PROPERTY_TAX = {
   WV: 0.0051,
   WI: 0.0132,
   WY: 0.0053,
+};
+
+// ---------------------------------------------------------------------------
+// Homeowner's insurance: effective rate (avg annual premium as a fraction of
+// home value) by state. Premiums from Bankrate state averages ($300k dwelling,
+// Nov 2025); home values from Zillow ZHVI (Jul 2025). Curated, changes slowly.
+// Caveat: the flat $300k coverage understates high-value states (CA, HI, MA,
+// WA), so treat those as a floor. Users can override via the slider.
+// ---------------------------------------------------------------------------
+const INSURANCE = {
+  _source:
+    "Effective rate = avg annual home insurance premium / typical home value. " +
+    "Premiums: Bankrate state averages ($300k dwelling, Nov 2025). " +
+    "Home values: Zillow ZHVI (Jul 2025).",
+  _asOf: "2025",
+  AL: 0.0113, AK: 0.0024, AZ: 0.0047, AR: 0.0137, CA: 0.0021, CO: 0.0065,
+  CT: 0.0036, DE: 0.0019, DC: 0.0012, FL: 0.0213, GA: 0.006, HI: 0.0013,
+  ID: 0.0028, IL: 0.007, IN: 0.0063, IA: 0.009, KS: 0.0153, KY: 0.0147,
+  LA: 0.0266, ME: 0.0028, MD: 0.0034, MA: 0.0023, MI: 0.0095, MN: 0.0071,
+  MS: 0.013, MO: 0.0077, MT: 0.0056, NE: 0.0221, NV: 0.0021, NH: 0.0018,
+  NJ: 0.0019, NM: 0.0055, NY: 0.0041, NC: 0.0046, ND: 0.0084, OH: 0.0053,
+  OK: 0.0185, OR: 0.0019, PA: 0.0041, RI: 0.0044, SC: 0.0056, SD: 0.0088,
+  TN: 0.0067, TX: 0.008, UT: 0.0022, VT: 0.0019, VA: 0.0033, WA: 0.0023,
+  WV: 0.0057, WI: 0.0034, WY: 0.0035,
 };
 
 // ---------------------------------------------------------------------------
@@ -656,11 +681,13 @@ async function main() {
   await writeFile(MARKET_PATH, JSON.stringify(newMarket, null, 2) + "\n");
   await writeFile(LOCATIONS_PATH, JSON.stringify(zillow.locations, null, 2) + "\n");
   await writeFile(PROPERTY_TAX_PATH, JSON.stringify(PROPERTY_TAX, null, 2) + "\n");
+  await writeFile(INSURANCE_PATH, JSON.stringify(INSURANCE, null, 2) + "\n");
   await saveHistory(newMarket, summary);
 
   console.log("\n=== fetch-data summary ===");
   for (const line of summary) console.log("  " + line);
   console.log(`  propertyTax: wrote ${Object.keys(PROPERTY_TAX).length - 2} states/DC (curated)`);
+  console.log(`  insurance: wrote ${Object.keys(INSURANCE).length - 2} states/DC (curated)`);
   console.log("==========================\n");
 }
 

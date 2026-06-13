@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { calculate, type CalcInputs } from "./engine/calculator";
 import { buildInputs } from "./engine/defaults";
 import { Controls } from "./components/Controls";
@@ -7,35 +7,82 @@ import { Breakdown } from "./components/Breakdown";
 import { Disclosure } from "./ui";
 import { monthsAndYears, pct, usd } from "./lib/format";
 import { ThemeToggle } from "./theme";
+import { detectMetro } from "./geo";
 import type { LocationData, MarketData, PropertyTaxTable } from "./data/types";
 
 import marketRaw from "./data/market.json";
 import locationsRaw from "./data/locations.json";
 import propertyTaxRaw from "./data/propertyTax.json";
+import insuranceRaw from "./data/insurance.json";
 
 const market = marketRaw as MarketData;
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
 // so cast through unknown; state-code lookups are unaffected.
 const propertyTax = propertyTaxRaw as unknown as PropertyTaxTable;
+const insurance = insuranceRaw as unknown as PropertyTaxTable;
 
 const usHome = locations.find((l) => l.id === "united-states") ?? locations[0];
+const METRO_KEY = "bow:metro";
+
+// Returning visitors keep their last metro (no flash, no re-detect).
+function storedLocation(): LocationData {
+  try {
+    const id = localStorage.getItem(METRO_KEY);
+    if (id) return locations.find((l) => l.id === id) ?? usHome;
+  } catch {
+    /* storage unavailable */
+  }
+  return usHome;
+}
 
 export function App() {
-  const [selected, setSelected] = useState<LocationData>(usHome);
-  const [inputs, setInputs] = useState<CalcInputs>(() => buildInputs(usHome, market, propertyTax));
+  const [selected, setSelected] = useState<LocationData>(storedLocation);
+  const [inputs, setInputs] = useState<CalcInputs>(() =>
+    buildInputs(storedLocation(), market, propertyTax, insurance),
+  );
 
   const result = useMemo(() => calculate(inputs), [inputs]);
   const patch = (p: Partial<CalcInputs>) => setInputs((prev) => ({ ...prev, ...p }));
 
-  function selectLocation(loc: LocationData) {
+  function selectLocation(loc: LocationData, remember = true) {
     setSelected(loc);
     patch({
       homePrice: loc.homeValue,
       monthlyRent: loc.rent,
       propertyTaxRate: propertyTax[loc.state] ?? inputs.propertyTaxRate,
+      homeInsuranceRate: insurance[loc.state] ?? inputs.homeInsuranceRate,
     });
+    if (remember) {
+      try {
+        localStorage.setItem(METRO_KEY, loc.id);
+      } catch {
+        /* storage unavailable */
+      }
+    }
   }
+
+  // First visit with no saved metro: auto-detect from IP (silent fallback to US).
+  const detected = useRef(false);
+  useEffect(() => {
+    if (detected.current) return;
+    detected.current = true;
+    let stored = false;
+    try {
+      stored = !!localStorage.getItem(METRO_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    if (stored) return;
+    let cancelled = false;
+    detectMetro(locations).then((loc) => {
+      if (!cancelled && loc) selectLocation(loc);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -233,6 +280,11 @@ function Sources() {
       label: "Property tax",
       value: "Tax Foundation, effective rates by state (2024)",
       href: "https://taxfoundation.org/data/all/state/property-taxes-by-state-county-2024/",
+    },
+    {
+      label: "Home insurance",
+      value: "Bankrate state averages / Zillow ZHVI, effective rate by state",
+      href: "https://www.bankrate.com/insurance/homeowners-insurance/states/",
     },
     {
       label: "Capital gains",

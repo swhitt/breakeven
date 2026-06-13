@@ -15,6 +15,7 @@ export function buildInputs(
   loc: LocationData,
   market: MarketData,
   propertyTax: PropertyTaxTable,
+  insurance: PropertyTaxTable,
   filingJointly = true,
 ): CalcInputs {
   return {
@@ -30,7 +31,7 @@ export function buildInputs(
 
     propertyTaxRate: propertyTax[loc.state] ?? 0.011,
     maintenanceRate: 0.01,
-    homeInsuranceRate: 0.005,
+    homeInsuranceRate: insurance[loc.state] ?? 0.005,
     hoaMonthly: 0,
     extraUtilitiesMonthly: 0,
 
