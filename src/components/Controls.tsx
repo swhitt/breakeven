@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import type { CalcInputs } from "../engine/calculator";
+import { STANDARD_DEDUCTION } from "../engine/taxConstants";
 import type { LocationData, MarketData } from "../data/types";
+
+// States where the $300k-coverage insurance premium understates replacement cost.
+const HIGH_VALUE_INSURANCE_STATES = new Set(["CA", "HI", "MA", "WA", "NY", "NJ"]);
 import { pct, usd } from "../lib/format";
 import { Disclosure, Field, LiveBadge, MoneyInput, Segmented, Slider } from "../ui";
 import { LocationPicker } from "./LocationPicker";
@@ -79,7 +83,7 @@ export function Controls({
         hint={
           <span>
             {usd(downAmount)} down{" "}
-            {pmiOn ? <span className="text-buy">· under 20%, so PMI applies</span> : "· no PMI"}
+            {pmiOn ? <span className="text-buy-text">· under 20%, so PMI applies</span> : "· no PMI"}
           </span>
         }
       />
@@ -110,7 +114,10 @@ export function Controls({
           <Segmented
             value={inputs.filingJointly ? "joint" : "single"}
             onChange={(v) =>
-              patch({ filingJointly: v === "joint", standardDeduction: v === "joint" ? 30000 : 15000 })
+              patch({
+                filingJointly: v === "joint",
+                standardDeduction: v === "joint" ? STANDARD_DEDUCTION.joint : STANDARD_DEDUCTION.single,
+              })
             }
             options={[
               { label: "Married/joint", value: "joint" },
@@ -144,7 +151,7 @@ export function Controls({
               selected.appreciation5yr != null ? (
                 <button
                   type="button"
-                  className="text-rent underline-offset-2 hover:underline"
+                  className="text-rent-text underline-offset-2 hover:underline"
                   onClick={() => patch({ homeAppreciation: selected.appreciation5yr! })}
                 >
                   {selected.metro} ran {pct(selected.appreciation5yr, 1)}/yr the last 5 years (use it)
@@ -211,6 +218,11 @@ export function Controls({
             onChange={(n) => patch({ homeInsuranceRate: n })}
             format={(n) => pct(n, 2)}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
+            hint={
+              HIGH_VALUE_INSURANCE_STATES.has(selected.state)
+                ? "Default assumes $300k coverage; insuring a high-value home to replacement cost costs more, so bump this."
+                : undefined
+            }
           />
           <SliderRow
             label="Marginal tax rate"

@@ -1,37 +1,49 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { calculate, type CalcInputs } from "./engine/calculator";
 import { buildInputs } from "./engine/defaults";
 import { Controls } from "./components/Controls";
-import { CrossoverChart } from "./components/CrossoverChart";
 import { Breakdown } from "./components/Breakdown";
 import { Disclosure } from "./ui";
 import { monthsAndYears, pct, usd } from "./lib/format";
 import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
-import type { LocationData, MarketData, PropertyTaxTable } from "./data/types";
+import type { LocationData, MarketData, StateRateTable } from "./data/types";
 
 import marketRaw from "./data/market.json";
 import locationsRaw from "./data/locations.json";
 import propertyTaxRaw from "./data/propertyTax.json";
 import insuranceRaw from "./data/insurance.json";
 
+// Recharts (+d3) is ~half the bundle and only used below the fold, so load it
+// lazily off the critical path.
+const CrossoverChart = lazy(() =>
+  import("./components/CrossoverChart").then((m) => ({ default: m.CrossoverChart })),
+);
+
 const market = marketRaw as MarketData;
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
 // so cast through unknown; state-code lookups are unaffected.
-const propertyTax = propertyTaxRaw as unknown as PropertyTaxTable;
-const insurance = insuranceRaw as unknown as PropertyTaxTable;
+const propertyTax = propertyTaxRaw as unknown as StateRateTable;
+const insurance = insuranceRaw as unknown as StateRateTable;
 
 const usHome = locations.find((l) => l.id === "united-states") ?? locations[0];
 const METRO_KEY = "bow:metro"; // last selected metro (detected or chosen)
 const HOME_KEY = "bow:home"; // the auto-detected locale, never overwritten by manual picks
 const OVERRIDES_KEY = "bow:overrides";
 
-// Manual edits we remember across reloads.
-const PERSIST_FIELDS = ["homePrice", "downPaymentPct", "propertyTaxRate", "marginalTaxRate"] as const;
+// Manual edits we remember across reloads. All four are numeric, which the
+// loader relies on to drop corrupted (non-finite) persisted values.
+const PERSIST_FIELDS = [
+  "homePrice",
+  "downPaymentPct",
+  "propertyTaxRate",
+  "homeInsuranceRate",
+  "marginalTaxRate",
+] as const;
 // Of those, the ones tied to a specific place: cleared when you pick a new metro
 // (the override was for the old location). The rest are personal and always stick.
-const LOCATION_FIELDS: (keyof CalcInputs)[] = ["homePrice", "propertyTaxRate"];
+const LOCATION_FIELDS: (keyof CalcInputs)[] = ["homePrice", "propertyTaxRate", "homeInsuranceRate"];
 
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
@@ -44,10 +56,21 @@ function storedLocation(): LocationData {
   return usHome;
 }
 
+// Whitelist to known numeric fields and drop anything non-finite, so corrupted
+// storage (e.g. {homePrice: null} or {propertyTaxRate: {}}) can't reach the
+// engine and render $NaN / a bogus $0 home.
 function loadOverrides(): Partial<CalcInputs> {
   try {
     const raw = localStorage.getItem(OVERRIDES_KEY);
-    if (raw) return JSON.parse(raw) as Partial<CalcInputs>;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const clean: Partial<CalcInputs> = {};
+    for (const k of PERSIST_FIELDS) {
+      const v = parsed[k];
+      const n = typeof v === "string" ? Number(v) : v;
+      if (typeof n === "number" && Number.isFinite(n)) clean[k] = n as never;
+    }
+    return clean;
   } catch {
     /* storage unavailable or malformed */
   }
@@ -71,6 +94,13 @@ export function App() {
   }));
 
   const result = useMemo(() => calculate(inputs), [inputs]);
+
+  // Mirror the current selection in a ref so async geo callbacks can tell whether
+  // the user has moved on since they were kicked off (avoids yanking the location).
+  const selectedRef = useRef(selected.id);
+  useEffect(() => {
+    selectedRef.current = selected.id;
+  }, [selected]);
 
   // Manual edits from the controls. Persist the ones we remember.
   const patch = (p: Partial<CalcInputs>) => {
@@ -143,6 +173,7 @@ export function App() {
     }
     // No remembered home yet: reset the current locale now, detect home in the
     // background and hop to it (silent fallback keeps the current locale).
+    const resetFrom = selected.id;
     goTo(selected);
     detectMetro(locations).then((loc) => {
       if (!loc) return;
@@ -151,7 +182,8 @@ export function App() {
       } catch {
         /* storage unavailable */
       }
-      goTo(loc);
+      // Only hop if the user hasn't picked a different metro since reset.
+      if (selectedRef.current === resetFrom) goTo(loc);
     });
   }
 
@@ -170,7 +202,10 @@ export function App() {
     let cancelled = false;
     detectMetro(locations).then((loc) => {
       if (cancelled || !loc) return;
+      // The user may have picked a metro while detection was in flight;
+      // selectLocation writes METRO_KEY synchronously, so bail if it's set now.
       try {
+        if (localStorage.getItem(METRO_KEY)) return;
         localStorage.setItem(HOME_KEY, loc.id); // remember the locale for Reset
       } catch {
         /* storage unavailable */
@@ -237,11 +272,13 @@ export function App() {
                 Net cost in today's dollars if you sell and move out after each year. Where the lines cross is the
                 point buying pulls ahead.
               </p>
-              <CrossoverChart
-                data={result.horizon}
-                breakevenYear={result.breakevenYear}
-                yearsToStay={inputs.yearsToStay}
-              />
+              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
+                <CrossoverChart
+                  data={result.horizon}
+                  breakevenYear={result.breakevenYear}
+                  yearsToStay={inputs.yearsToStay}
+                />
+              </Suspense>
             </div>
 
             <Disclosure summary="Show the year-by-year math">
@@ -321,7 +358,7 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
     >
       <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="p-5 sm:p-6">
-          <div className={"text-xs font-bold uppercase tracking-wide " + (renting ? "text-rent" : "text-buy")}>
+          <div className={"text-xs font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
             Verdict
           </div>
           <div className="mt-1 text-2xl font-extrabold">{renting ? "Rent it" : "Buy it"}</div>
@@ -389,7 +426,7 @@ function Sources() {
     },
     {
       label: "Home prices & rents",
-      value: `Zillow ZHVI / ZORI (${market.national.asOf})`,
+      value: `Zillow ZHVI / ZORI asking rents (${market.national.asOf})`,
       href: "https://www.zillow.com/research/data/",
     },
     {
@@ -399,12 +436,12 @@ function Sources() {
     },
     {
       label: "Property tax",
-      value: "Tax Foundation, effective rates by state (2024)",
-      href: "https://taxfoundation.org/data/all/state/property-taxes-by-state-county-2024/",
+      value: "Tax Foundation, Property Taxes by State & County (2024 ACS)",
+      href: "https://taxfoundation.org/data/all/state/property-taxes-by-state-county/",
     },
     {
       label: "Home insurance",
-      value: "Bankrate state averages / Zillow ZHVI, effective rate by state",
+      value: "Bankrate / Zillow ZHVI, effective rate by state (a floor in high-value states)",
       href: "https://www.bankrate.com/insurance/homeowners-insurance/states/",
     },
     {
@@ -448,7 +485,9 @@ function Sources() {
         <p>
           Honest caveats: the SALT cap, standard deduction, and capital-gains brackets are simplified and change with
           tax law, so treat the deduction math as an estimate. Appreciation defaults to a conservative long-run figure
-          rather than recent local run-ups. This is a decision aid, not financial advice.
+          rather than recent local run-ups. The rent figure is Zillow ZORI, which tracks asking rents on newly-listed
+          units and runs ahead of what a tenant renewing in place pays, so in a hot market the default may be high.
+          Adjust any input to your own numbers. This is a decision aid, not financial advice.
         </p>
         <p className="pt-2">
           Free and open source. Data refreshes automatically.{" "}

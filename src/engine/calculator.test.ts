@@ -19,9 +19,9 @@ const base: CalcInputs = {
   sellingCostPct: 0.06,
   pmiRate: 0.0058,
   marginalTaxRate: 0.24,
-  standardDeduction: 30000,
+  standardDeduction: 32200,
   otherSALT: 0,
-  saltCap: 10000,
+  saltCap: 40400,
   filingJointly: true,
   capitalGainsRate: 0.15,
   monthlyRent: 2200,
@@ -88,5 +88,22 @@ describe("calculate", () => {
     const noPmi = calculate({ ...base, downPaymentPct: 0.5 });
     const totalPmi = noPmi.years.reduce((s, y) => s + y.pmi, 0);
     expect(totalPmi).toBe(0);
+  });
+
+  it("caps deductible mortgage interest at the acquisition-debt limit on jumbo loans", () => {
+    // $2M home, 20% down => $1.6M loan, above both caps. Neutralize the other
+    // filing-status effects (cap-gains rate 0, equal standard deduction) so only
+    // the $750k (joint) vs $375k (single) interest cap differs.
+    const jumbo = { ...base, homePrice: 2_000_000, capitalGainsRate: 0, standardDeduction: 30000 };
+    const joint = calculate({ ...jumbo, filingJointly: true });
+    const single = calculate({ ...jumbo, filingJointly: false });
+    // Joint deducts interest on $750k vs single's $375k, so buying is cheaper.
+    expect(joint.breakevenRent).toBeLessThan(single.breakevenRent);
+
+    // A sub-cap loan isn't affected by the interest cap (both fractions = 1).
+    const small = { ...base, homePrice: 300_000, capitalGainsRate: 0, standardDeduction: 30000 };
+    const sJoint = calculate({ ...small, filingJointly: true });
+    const sSingle = calculate({ ...small, filingJointly: false });
+    expect(sJoint.breakevenRent).toBeCloseTo(sSingle.breakevenRent, 6);
   });
 });

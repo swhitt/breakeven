@@ -2,7 +2,6 @@ import {
   Area,
   CartesianGrid,
   ComposedChart,
-  Line,
   ReferenceDot,
   ResponsiveContainer,
   Tooltip,
@@ -27,6 +26,7 @@ export function CrossoverChart({
 }) {
   const rows: Row[] = data.map((d) => ({ ...d, gap: d.buyNetCost - d.rentNetCost }));
   const cross = breakevenYear ? rows.find((r) => r.year === breakevenYear) : undefined;
+  const stay = rows.find((r) => r.year === Math.round(yearsToStay));
 
   return (
     <div className="h-72 w-full sm:h-80">
@@ -93,8 +93,7 @@ export function CrossoverChart({
             dot={false}
             activeDot={{ r: 4 }}
           />
-          {/* faint marker for the user's chosen horizon */}
-          <Line dataKey={() => null} dot={false} legendType="none" />
+          {/* breakeven crossover marker */}
           {cross && (
             <ReferenceDot
               x={cross.year}
@@ -105,12 +104,10 @@ export function CrossoverChart({
               strokeWidth={2}
             />
           )}
-          {(() => {
-            const stay = rows.find((r) => r.year === Math.round(yearsToStay));
-            return stay ? (
-              <ReferenceDot x={stay.year} y={stay.buyNetCost} r={3.5} fill="var(--color-buy)" stroke="none" />
-            ) : null;
-          })()}
+          {/* faint marker for the user's chosen horizon */}
+          {stay && (
+            <ReferenceDot x={stay.year} y={stay.buyNetCost} r={3.5} fill="var(--color-buy)" stroke="none" />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

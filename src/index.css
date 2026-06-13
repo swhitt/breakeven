@@ -17,6 +17,11 @@
   --color-buy: #ea580c;
   --color-buy-soft: #ffedd5;
   --color-brand: #15171a;
+
+  /* Darker accent variants for small text, to clear WCAG AA on the light theme.
+     The bright --color-rent/--color-buy stay for chart strokes and dots. */
+  --color-rent-text: #0f766e;
+  --color-buy-text: #c2410c;
 }
 
 /*
@@ -36,6 +41,9 @@
   --color-buy: #fb923c;
   --color-buy-soft: #3a2412;
   --color-brand: #f4f1ea;
+  /* Dark theme already clears AA with the bright accents, so reuse them. */
+  --color-rent-text: #2dd4bf;
+  --color-buy-text: #fb923c;
 }
 
 @layer base {

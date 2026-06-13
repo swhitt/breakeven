@@ -1,5 +1,6 @@
 import type { CalcInputs } from "./calculator";
-import type { LocationData, MarketData, PropertyTaxTable } from "../data/types";
+import { SALT_CAP, STANDARD_DEDUCTION } from "./taxConstants";
+import type { LocationData, MarketData, StateRateTable } from "../data/types";
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
@@ -14,8 +15,8 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 export function buildInputs(
   loc: LocationData,
   market: MarketData,
-  propertyTax: PropertyTaxTable,
-  insurance: PropertyTaxTable,
+  propertyTax: StateRateTable,
+  insurance: StateRateTable,
   filingJointly = true,
 ): CalcInputs {
   return {
@@ -40,9 +41,9 @@ export function buildInputs(
     pmiRate: 0.0058,
 
     marginalTaxRate: 0.24,
-    standardDeduction: filingJointly ? 30000 : 15000,
+    standardDeduction: filingJointly ? STANDARD_DEDUCTION.joint : STANDARD_DEDUCTION.single,
     otherSALT: 0,
-    saltCap: 10000,
+    saltCap: SALT_CAP,
     filingJointly,
     capitalGainsRate: 0.15,
 

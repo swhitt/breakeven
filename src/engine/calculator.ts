@@ -18,6 +18,8 @@
  * The simulation is monthly for accuracy (amortization, PMI drop-off, compounding).
  */
 
+import { MORTGAGE_INTEREST_DEBT_CAP } from "./taxConstants";
+
 export interface CalcInputs {
   // Purchase
   homePrice: number;
@@ -135,6 +137,12 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   const downPayment = inp.homePrice * inp.downPaymentPct;
   const closing = inp.homePrice * inp.buyingClosingPct;
 
+  // IRC 163(h)(3): mortgage interest is deductible only on the first $750k of
+  // acquisition debt ($375k MFS). Scale the deductible interest by that fraction
+  // (1 for loans at or under the cap, so most metros are unaffected).
+  const acqDebtCap = inp.filingJointly ? MORTGAGE_INTEREST_DEBT_CAP.joint : MORTGAGE_INTEREST_DEBT_CAP.single;
+  const deductibleIntFrac = loan > 0 ? Math.min(1, acqDebtCap / loan) : 1;
+
   // Initial outlay happens at t=0, no discount.
   let pv = downPayment + closing;
 
@@ -191,10 +199,14 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     yrPmi += pmi;
 
     // Year boundary: credit the tax benefit (itemization premium over standard).
-    if (m % 12 === 0 || m === months) {
-      const monthsThisYear = m % 12 === 0 ? 12 : m % 12;
+    // Horizons are always whole years (callers round), so every year is full.
+    if (m % 12 === 0) {
       const saltUsed = Math.min(yrPropTax + inp.otherSALT, inp.saltCap);
-      const itemized = yrInterest + saltUsed;
+      // PMI is deliberately excluded from itemized deductions. OBBBA restored the
+      // mortgage-insurance-premium deduction for 2026+, but it phases out between
+      // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
+      // rate already implies AGI past the phaseout), so we treat PMI as a pure cost.
+      const itemized = yrInterest * deductibleIntFrac + saltUsed;
       const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
       // credit at end-of-year discount point (use current month's df)
       pv -= benefit / df;
@@ -216,7 +228,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           homeValue,
           loanBalance: balance,
           equity: homeValue - balance,
-          rentPaid: monthsThisYear, // placeholder, filled by caller
+          rentPaid: 0, // placeholder, filled by calculate()
         });
       }
       yrInterest = yrPrincipal = yrMortgage = yrPropTax = yrMaint = yrIns = yrHoa = yrPmi = 0;
@@ -226,7 +238,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   // Sale at the horizon (inflow, discounted).
   const saleValue = inp.homePrice * Math.pow(1 + inp.homeAppreciation, horizonYears);
   const sellingCosts = saleValue * inp.sellingCostPct;
-  const gain = saleValue - sellingCosts - inp.homePrice;
+  // Basis = purchase price + buying closing costs (symmetric with selling costs).
+  const gain = saleValue - sellingCosts - inp.homePrice - closing;
   const exclusion = inp.filingJointly ? 500000 : 250000;
   const taxableGain = Math.max(0, gain - exclusion);
   const capGainsTax = inp.capitalGainsRate * taxableGain;

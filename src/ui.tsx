@@ -27,7 +27,7 @@ export function Field({
 /** Small pill that cites a live data value next to an input. */
 export function LiveBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-rent-soft px-2 py-0.5 text-[11px] font-medium text-rent">
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-rent-soft px-2 py-0.5 text-[11px] font-medium text-rent-text">
       <span className="h-1.5 w-1.5 rounded-full bg-rent" />
       {children}
     </span>
@@ -39,10 +39,12 @@ export function MoneyInput({
   value,
   onChange,
   step = 1000,
+  max = 1e12,
 }: {
   value: number;
   onChange: (n: number) => void;
   step?: number;
+  max?: number;
 }) {
   const [text, setText] = useState(() => value.toLocaleString("en-US"));
 
@@ -54,6 +56,13 @@ export function MoneyInput({
     if (shown !== value) setText(value ? value.toLocaleString("en-US") : "");
   }, [value, text]);
 
+  // Clamp to [0, max] so an extreme paste can't overflow the engine to NaN.
+  const commit = (n: number) => {
+    const clamped = Math.max(0, Math.min(n, max));
+    setText(clamped ? clamped.toLocaleString("en-US") : "");
+    onChange(clamped);
+  };
+
   return (
     <div className="flex items-center rounded-lg border border-line bg-surface focus-within:border-ink focus-within:ring-2 focus-within:ring-ink/10">
       <span className="pl-3 pr-1 text-muted">$</span>
@@ -63,11 +72,19 @@ export function MoneyInput({
         value={text}
         onChange={(e) => {
           const raw = e.target.value.replace(/[^0-9]/g, "");
-          setText(raw === "" ? "" : Number(raw).toLocaleString("en-US"));
-          onChange(raw === "" ? 0 : Number(raw));
+          if (raw === "") {
+            setText("");
+            onChange(0);
+            return;
+          }
+          commit(Number(raw));
         }}
-        aria-label="dollar amount"
-        data-step={step}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          const cur = Number(text.replace(/[^0-9]/g, "")) || 0;
+          commit(cur + (e.key === "ArrowUp" ? step : -step));
+        }}
       />
     </div>
   );
@@ -98,6 +115,7 @@ export function Slider({
         max={max}
         step={step}
         value={value}
+        aria-valuetext={format(value)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
       <span className="tnum w-16 shrink-0 text-right text-sm font-semibold text-ink">{format(value)}</span>

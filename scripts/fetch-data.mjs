@@ -48,7 +48,7 @@ const MAX_METROS = 400;
 // ---------------------------------------------------------------------------
 const PROPERTY_TAX = {
   _source:
-    "Tax Foundation, effective property tax rate on owner-occupied housing (2024)",
+    "Tax Foundation, Property Taxes by State & County, effective rate on owner-occupied housing (2024 ACS 5-year estimates)",
   _asOf: "2024",
   AL: 0.0037,
   AK: 0.0094,
@@ -222,6 +222,8 @@ function parseCsvLine(line) {
 }
 
 // Split CSV text into rows (handles trailing \r, blank lines, BOM).
+// Assumes no quoted field contains an embedded newline (true for PMMS/ZHVI/ZORI);
+// revisit if a future source can emit multi-line quoted fields.
 function parseCsv(text) {
   const clean = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   return clean
@@ -312,13 +314,17 @@ async function fetchInflation(existing, summary) {
   try {
     const now = new Date();
     const thisYear = now.getUTCFullYear();
-    const lastYear = thisYear - 1;
+    // CPI publishes with a ~1-month lag, so in Jan/Feb the latest point is still
+    // in the prior year and its year-ago month would fall outside a 2-year window,
+    // making the YoY calc fail and silently fall back. A 3-year window always
+    // contains the year-ago month and stays within BLS v2's 10-year limit.
+    const startYear = thisYear - 2;
     const res = await fetchWithTimeout(URLS.bls, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         seriesid: ["CUUR0000SA0"],
-        startyear: String(lastYear),
+        startyear: String(startYear),
         endyear: String(thisYear),
       }),
     });

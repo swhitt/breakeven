@@ -15,4 +15,5 @@ export interface LocationData {
   appreciation5yr?: number;
 }
 
-export type PropertyTaxTable = Record<string, number>;
+/** A per-state lookup of effective annual rates keyed by 2-letter state code. */
+export type StateRateTable = Record<string, number>;
