@@ -18,7 +18,7 @@
  * The simulation is monthly for accuracy (amortization, PMI drop-off, compounding).
  */
 
-import { MORTGAGE_INTEREST_DEBT_CAP } from "./taxConstants";
+import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP } from "./taxConstants";
 
 /**
  * How a recurring ownership cost is expressed. A tagged union so only one
@@ -46,6 +46,9 @@ export interface CalcInputs {
 
   // Horizon & money
   yearsToStay: number; // e.g. 9
+  // Does double duty (on purpose): the opportunity cost of the down payment AND the
+  // discount rate for every cash flow. So mortgage and uncertain-appreciation flows
+  // are discounted at the same risk-blind rate, a deliberate simplification.
   investmentReturn: number; // annual opportunity / discount rate, e.g. 0.05
   inflation: number; // annual, e.g. 0.024
 
@@ -316,6 +319,13 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // mortgage-insurance-premium deduction for 2026+, but it phases out between
       // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
       // rate already implies AGI past the phaseout), so we treat PMI as a pure cost.
+      // ASSUMPTION: standardDeduction, saltCap, and otherSALT are held at their
+      // entry-year nominal value for the whole horizon, while the itemized total
+      // inflates with the home. Real law indexes these, so this slightly overstates
+      // the long-horizon benefit for high-tax itemizers (it's $0, and so unaffected,
+      // for the common standard-deduction-wins case). Held flat on purpose; revisit
+      // if the horizon-tilt matters. The premium is also valued at a single marginal
+      // rate (a small overstatement when it straddles a bracket).
       const itemized = yrDeductibleInterest + saltUsed;
       const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
       // credit at end-of-year discount point (use current month's df)
@@ -347,7 +357,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   const sellingCosts = saleValue * inp.sellingCostPct;
   // Basis = purchase price + buying closing costs (symmetric with selling costs).
   const gain = saleValue - sellingCosts - inp.homePrice - closing;
-  const exclusion = inp.filingJointly ? 500000 : 250000;
+  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
   const taxableGain = Math.max(0, gain - exclusion);
   const capGainsTax = inp.capitalGainsRate * taxableGain;
   const netProceeds = saleValue - sellingCosts - balance - capGainsTax;

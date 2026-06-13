@@ -199,6 +199,10 @@ export function App() {
   // and property-tax deductions are FEDERAL itemized deductions, so they save at
   // the federal marginal rate; state and local income tax don't raise that rate but
   // do join property tax in the SALT base (capped), so they feed otherSALT.
+  // ASSUMPTION: state-return itemization (some states let you deduct mortgage
+  // interest / property tax too) is intentionally NOT modeled. It errs slightly
+  // toward renting, consistent with the conservative defaults. Don't "fix" this by
+  // passing est.combined into marginalTaxRate: that double-counts against the SALT base.
   const inputsForCalc = useMemo<CalcInputs>(() => {
     if (!inputs.taxAuto || inputs.annualIncome <= 0) return inputs;
     const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);

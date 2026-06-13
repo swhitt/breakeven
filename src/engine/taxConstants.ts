@@ -21,3 +21,6 @@ export const STANDARD_DEDUCTION = { joint: 32200, single: 16100 } as const;
 export const SALT_CAP = 40400;
 
 export const MORTGAGE_INTEREST_DEBT_CAP = 750000;
+
+/** IRC 121 capital-gains exclusion on a primary-residence sale, by filing status. */
+export const CAPITAL_GAINS_EXCLUSION = { joint: 500000, single: 250000 } as const;
