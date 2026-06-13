@@ -31,8 +31,14 @@ export function buildInputs(
     inflation: clamp(market.inflation.rate, 0.01, 0.06),
 
     propertyTaxRate: propertyTax[loc.state] ?? 0.011,
+    maintenanceMode: "pct",
     maintenanceRate: 0.01,
+    // Dollar defaults track the percent defaults at today's value, so toggling
+    // %/$ starts from the same number instead of jumping.
+    maintenanceAnnual: Math.round(loc.homeValue * 0.01),
+    homeInsuranceMode: "pct",
     homeInsuranceRate: insurance[loc.state] ?? 0.005,
+    homeInsuranceAnnual: Math.round(loc.homeValue * (insurance[loc.state] ?? 0.005)),
     hoaMonthly: 0,
     extraUtilitiesMonthly: 0,
 
@@ -46,6 +52,12 @@ export function buildInputs(
     saltCap: SALT_CAP,
     filingJointly,
     capitalGainsRate: 0.15,
+    // Tax-rate estimator starts off (manual 24% above) until the user enters an
+    // income; the state is pre-seeded from the location so it's one less field.
+    taxAuto: false,
+    annualIncome: 0,
+    taxState: loc.state,
+    localTaxRate: 0,
 
     monthlyRent: loc.rent,
     rentGrowth: clamp(Math.max(market.inflation.rate, 0.03), 0.01, 0.06),

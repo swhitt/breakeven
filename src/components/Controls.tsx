@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { CalcInputs } from "../engine/calculator";
 import { STANDARD_DEDUCTION } from "../engine/taxConstants";
+import { estimateMarginalRate, STATE_OPTIONS, STATE_TAX } from "../engine/taxRates";
 import type { LocationData, MarketData } from "../data/types";
 import { pct, usd } from "../lib/format";
 import { Disclosure, Field, LiveBadge, MoneyInput, Segmented, Slider } from "../ui";
@@ -36,6 +37,180 @@ function SliderRow({
   );
 }
 
+/**
+ * A recurring cost the user can express either as a percent of home value (a
+ * slider, which rides the appreciating value) or as a flat dollar figure (a
+ * money input, which rides inflation). The hint shows the equivalent the other
+ * way so switching modes is never a surprise.
+ */
+function CostRow({
+  label,
+  mode,
+  onModeChange,
+  rate,
+  rateMax,
+  rateStep,
+  rateDigits,
+  onRateChange,
+  annual,
+  annualStep,
+  onAnnualChange,
+  homePrice,
+  badge,
+}: {
+  label: string;
+  mode: "pct" | "amount";
+  onModeChange: (m: "pct" | "amount") => void;
+  rate: number;
+  rateMax: number;
+  rateStep: number;
+  rateDigits: number;
+  onRateChange: (n: number) => void;
+  annual: number;
+  annualStep: number;
+  onAnnualChange: (n: number) => void;
+  homePrice: number;
+  badge?: ReactNode;
+}) {
+  const header = (
+    <span className="flex items-center gap-2">
+      {mode === "pct" && badge}
+      <Segmented
+        value={mode}
+        onChange={(v) => onModeChange(v as "pct" | "amount")}
+        options={[
+          { label: "%", value: "pct" },
+          { label: "$", value: "amount" },
+        ]}
+      />
+    </span>
+  );
+  const hint =
+    mode === "pct"
+      ? `${usd(homePrice * rate)}/yr at today's value`
+      : homePrice > 0
+        ? `${pct(annual / homePrice, 2)} of home value`
+        : undefined;
+  return (
+    <Field label={label} badge={header} hint={hint}>
+      {mode === "pct" ? (
+        <Slider
+          value={rate}
+          min={0}
+          max={rateMax}
+          step={rateStep}
+          onChange={onRateChange}
+          format={(n) => pct(n, rateDigits)}
+        />
+      ) : (
+        <MoneyInput value={annual} onChange={onAnnualChange} step={annualStep} />
+      )}
+    </Field>
+  );
+}
+
+/** Native state picker, styled to match the money/text inputs. */
+function StateSelect({ value, onChange }: { value: string; onChange: (s: string) => void }) {
+  return (
+    <select
+      value={STATE_TAX[value] ? value : "US"}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-[15px] font-medium outline-none focus:border-ink focus:ring-2 focus:ring-ink/10"
+    >
+      <option value="US">No state income tax</option>
+      {STATE_OPTIONS.map((s) => (
+        <option key={s.code} value={s.code}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Marginal income tax rate, either estimated from income + filing + state (so a
+ * user who doesn't know their bracket can still see the deduction's impact) or
+ * set by hand. In auto mode the engine derives the rate at calc time; this just
+ * shows the breakdown.
+ */
+function TaxRateControl({ inputs, patch }: { inputs: CalcInputs; patch: Patch }) {
+  const auto = inputs.taxAuto;
+  const hasIncome = inputs.annualIncome > 0;
+  const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
+  const stateLabel = STATE_TAX[inputs.taxState]?.name ? inputs.taxState : null;
+
+  return (
+    <Field
+      label="Income tax rate"
+      badge={
+        <Segmented
+          value={auto ? "auto" : "manual"}
+          onChange={(v) => patch({ taxAuto: v === "auto" })}
+          options={[
+            { label: "From income", value: "auto" },
+            { label: "Manual", value: "manual" },
+          ]}
+        />
+      }
+      hint={
+        auto
+          ? "Estimated federal + state marginal rate. Drives the value of the mortgage-interest and property-tax deductions."
+          : "Federal + state + local. Drives the value of the mortgage-interest and property-tax deductions."
+      }
+    >
+      {auto ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted">Household income (gross)</span>
+              <MoneyInput value={inputs.annualIncome} onChange={(n) => patch({ annualIncome: n })} step={5000} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted">State</span>
+              <StateSelect value={inputs.taxState} onChange={(s) => patch({ taxState: s })} />
+            </label>
+          </div>
+          <Slider
+            value={inputs.localTaxRate}
+            min={0}
+            max={0.05}
+            step={0.00125}
+            onChange={(n) => patch({ localTaxRate: n })}
+            format={(n) => pct(n, 2)}
+          />
+          <p className="-mt-1 text-xs text-muted">
+            Local (city/county) income tax, on top of state. e.g. NYC ≈ 3.9%, Yonkers, some OH/PA municipalities. Leave
+            at 0 if none.
+          </p>
+          {hasIncome ? (
+            <div className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+              <span className="tnum font-bold text-ink">{pct(est.combined, 1)}</span>{" "}
+              <span className="text-muted">
+                marginal = federal {pct(est.federal, 1)}
+                {est.state > 0 && stateLabel ? ` + ${stateLabel} ${pct(est.state, 1)}` : ""}
+                {est.local > 0 ? ` + local ${pct(est.local, 1)}` : ""}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">
+              Enter your income to estimate a rate. Until then, {pct(inputs.marginalTaxRate, 0)} is used.
+            </p>
+          )}
+        </div>
+      ) : (
+        <Slider
+          value={inputs.marginalTaxRate}
+          min={0}
+          max={0.5}
+          step={0.01}
+          onChange={(n) => patch({ marginalTaxRate: n })}
+          format={(n) => pct(n, 0)}
+        />
+      )}
+    </Field>
+  );
+}
+
 export function Controls({
   inputs,
   patch,
@@ -53,6 +228,32 @@ export function Controls({
 }) {
   const downAmount = inputs.homePrice * inputs.downPaymentPct;
   const pmiOn = inputs.downPaymentPct < 0.2;
+
+  // Carry the current cost across a %/$ toggle so the dollar figure shown doesn't
+  // jump: pct->amount seeds the dollars from the rate, amount->pct does the reverse.
+  const setMaintenanceMode = (mode: "pct" | "amount") => {
+    if (mode === inputs.maintenanceMode) return;
+    patch(
+      mode === "amount"
+        ? { maintenanceMode: mode, maintenanceAnnual: Math.round(inputs.homePrice * inputs.maintenanceRate) }
+        : {
+            maintenanceMode: mode,
+            maintenanceRate: inputs.homePrice > 0 ? inputs.maintenanceAnnual / inputs.homePrice : inputs.maintenanceRate,
+          },
+    );
+  };
+  const setInsuranceMode = (mode: "pct" | "amount") => {
+    if (mode === inputs.homeInsuranceMode) return;
+    patch(
+      mode === "amount"
+        ? { homeInsuranceMode: mode, homeInsuranceAnnual: Math.round(inputs.homePrice * inputs.homeInsuranceRate) }
+        : {
+            homeInsuranceMode: mode,
+            homeInsuranceRate:
+              inputs.homePrice > 0 ? inputs.homeInsuranceAnnual / inputs.homePrice : inputs.homeInsuranceRate,
+          },
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -197,35 +398,36 @@ export function Controls({
             format={(n) => pct(n, 2)}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
           />
-          <SliderRow
+          <CostRow
             label="Maintenance / yr"
-            value={inputs.maintenanceRate}
-            min={0}
-            max={0.03}
-            step={0.0025}
-            onChange={(n) => patch({ maintenanceRate: n })}
-            format={(n) => pct(n, 1)}
+            mode={inputs.maintenanceMode}
+            onModeChange={setMaintenanceMode}
+            rate={inputs.maintenanceRate}
+            rateMax={0.03}
+            rateStep={0.0025}
+            rateDigits={1}
+            onRateChange={(n) => patch({ maintenanceRate: n })}
+            annual={inputs.maintenanceAnnual}
+            annualStep={250}
+            onAnnualChange={(n) => patch({ maintenanceAnnual: n })}
+            homePrice={inputs.homePrice}
           />
-          <SliderRow
+          <CostRow
             label="Home insurance / yr"
-            value={inputs.homeInsuranceRate}
-            min={0}
-            max={0.03}
-            step={0.0005}
-            onChange={(n) => patch({ homeInsuranceRate: n })}
-            format={(n) => pct(n, 2)}
+            mode={inputs.homeInsuranceMode}
+            onModeChange={setInsuranceMode}
+            rate={inputs.homeInsuranceRate}
+            rateMax={0.03}
+            rateStep={0.0005}
+            rateDigits={2}
+            onRateChange={(n) => patch({ homeInsuranceRate: n })}
+            annual={inputs.homeInsuranceAnnual}
+            annualStep={100}
+            onAnnualChange={(n) => patch({ homeInsuranceAnnual: n })}
+            homePrice={inputs.homePrice}
             badge={<LiveBadge>{selected.state} avg</LiveBadge>}
           />
-          <SliderRow
-            label="Marginal tax rate"
-            value={inputs.marginalTaxRate}
-            min={0}
-            max={0.5}
-            step={0.01}
-            onChange={(n) => patch({ marginalTaxRate: n })}
-            format={(n) => pct(n, 0)}
-            hint="Federal + state + local. Drives the value of the mortgage-interest and property-tax deductions."
-          />
+          <TaxRateControl inputs={inputs} patch={patch} />
           <SliderRow
             label="Buying closing costs"
             value={inputs.buyingClosingPct}

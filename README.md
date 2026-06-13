@@ -8,6 +8,8 @@ Enter a location (or your own numbers) and it computes the **breakeven monthly r
 
 Every cost of owning (mortgage interest and principal, property tax, maintenance, insurance, PMI, HOA, closing and selling costs, and the investment return you give up by tying money in a down payment) is converted into rent-equivalent dollars and discounted at your investment-return rate.
 
+Don't know your tax bracket? Enter your income, filing status, and state and it estimates your marginal rate (federal + state, plus an optional local field), so the mortgage-interest and property-tax (SALT) deductions are valued realistically instead of guessed. Maintenance and insurance can each be entered as a percent of home value or a flat dollar figure, whichever you know.
+
 ## The model
 
 It uses a four-bucket cost decomposition (initial costs, recurring costs, opportunity costs, net sale proceeds), grounded in the user-cost-of-homeownership literature (Himmelberg, Mayer & Sinai, 2005). The engine is a pure, unit-tested module in [`src/engine/calculator.ts`](src/engine/calculator.ts). The simulation runs monthly for accurate amortization, PMI drop-off, and compounding.
@@ -30,11 +32,14 @@ A scheduled GitHub Action pulls fresh public data on each deploy and weekly ther
 | Home-price appreciation | Zillow ZHVI national CAGR |
 | Property tax by state | WalletHub / Census ACS (2024 median effective rates) |
 | Home insurance by state | NAIC HO-3 premiums / Zillow ZHVI (effective rate) |
+| Income tax (marginal) | IRS 2026 federal brackets, Tax Foundation / state DOR tables (50 states + DC) |
 | Capital-gains exclusion | IRS Topic 701 |
 
 The fetcher ([`scripts/fetch-data.mjs`](scripts/fetch-data.mjs)) is zero-dependency Node. Each source is fetched independently and falls back to the last committed value if it's unreachable, so a flaky upstream never breaks a deploy.
 
-**Location-aware.** The site auto-detects the visitor's metro from a keyless IP lookup on first load (silent fallback to the national figures, choice remembered in `localStorage`), then prefills home price, rent, property tax, and insurance for that location. This is the only runtime network call; everything else is baked at build time.
+**Location-aware.** The site auto-detects the visitor's metro from a keyless IP lookup on first load (silent fallback to the national figures, choice remembered in `localStorage`), then prefills home price, rent, property tax, and insurance for that location.
+
+**Self-refreshing.** On load the page also pulls the latest `market.json` (mortgage rates, inflation, national price/rent, appreciation) from the repo's jsDelivr CDN mirror, falling back to the bundled copy on any failure, so the headline numbers stay current between deploys without a rebuild. Those two keyless GETs (geo + market) are the only runtime network calls; everything else is baked at build time. To force a refresh, run the **Refresh data** GitHub Action (`workflow_dispatch`), which pulls fresh figures, commits them, and purges the CDN. The weekly cron on the deploy workflow keeps things current automatically.
 
 **Historical record.** Each sync appends a dated national snapshot (rates, prices, rent, inflation, appreciation) to [`src/data/history.json`](src/data/history.json), deduped by date. CI commits it back, so a time series accumulates across the weekly runs.
 
@@ -56,7 +61,7 @@ To enable Pages on a fresh repo: Settings → Pages → Source: **GitHub Actions
 
 ## Caveats
 
-The SALT cap, standard deduction, and capital-gains brackets are simplified and change with tax law, so treat the deduction math as an estimate. Home appreciation defaults to a conservative long-run figure rather than recent local run-ups (which overstate the future). This is a decision aid, not financial advice.
+The SALT cap, standard deduction, and capital-gains brackets are simplified and change with tax law, so treat the deduction math as an estimate. The marginal-rate estimator uses 2026 federal and state brackets applied to income net of the federal standard deduction (each state's own deductions vary), and excludes city/county income taxes unless you add them in the local field, so it's a close estimate rather than a tax return. Home appreciation defaults to a conservative long-run figure rather than recent local run-ups (which overstate the future). This is a decision aid, not financial advice.
 
 ## License
 

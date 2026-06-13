@@ -1,12 +1,14 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { calculate, type CalcInputs } from "./engine/calculator";
 import { buildInputs } from "./engine/defaults";
+import { estimateMarginalRate } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
 import { Breakdown } from "./components/Breakdown";
 import { Disclosure } from "./ui";
 import { monthsAndYears, pct, usd } from "./lib/format";
 import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
+import { fetchLiveMarket } from "./data/live";
 import type { LocationData, MarketData, StateRateTable } from "./data/types";
 
 import marketRaw from "./data/market.json";
@@ -20,7 +22,6 @@ const CrossoverChart = lazy(() =>
   import("./components/CrossoverChart").then((m) => ({ default: m.CrossoverChart })),
 );
 
-const market = marketRaw as MarketData;
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
 // so cast through unknown; state-code lookups are unaffected.
@@ -32,16 +33,27 @@ const METRO_KEY = "bow:metro"; // last selected metro (detected or chosen)
 const HOME_KEY = "bow:home"; // the auto-detected locale, never overwritten by manual picks
 const OVERRIDES_KEY = "bow:overrides";
 
-// Manual edits we remember across reloads. All numeric, which the loader relies
-// on to drop corrupted (non-finite) persisted values.
-const PERSIST_FIELDS = [
-  "homePrice",
-  "monthlyRent",
-  "downPaymentPct",
-  "propertyTaxRate",
-  "homeInsuranceRate",
-  "marginalTaxRate",
-] as const;
+// Manual edits we remember across reloads, each tagged with the kind we validate
+// on load so corrupted storage can't reach the engine (a bad number renders $NaN,
+// a bad enum breaks the toggle).
+const PERSIST_SPEC = {
+  homePrice: "number",
+  monthlyRent: "number",
+  downPaymentPct: "number",
+  propertyTaxRate: "number",
+  maintenanceMode: "mode",
+  maintenanceRate: "number",
+  maintenanceAnnual: "number",
+  homeInsuranceMode: "mode",
+  homeInsuranceRate: "number",
+  homeInsuranceAnnual: "number",
+  marginalTaxRate: "number",
+  taxAuto: "boolean",
+  annualIncome: "number",
+  taxState: "string",
+  localTaxRate: "number",
+} as const satisfies Partial<Record<keyof CalcInputs, "number" | "mode" | "boolean" | "string">>;
+const PERSIST_KEYS = Object.keys(PERSIST_SPEC) as (keyof typeof PERSIST_SPEC)[];
 // Of those, the ones tied to a specific place: cleared when you pick a new metro
 // (the override was for the old location), so they revert to that metro's default.
 // The rest are personal and always stick.
@@ -50,6 +62,9 @@ const LOCATION_FIELDS: (keyof CalcInputs)[] = [
   "monthlyRent",
   "propertyTaxRate",
   "homeInsuranceRate",
+  "homeInsuranceAnnual",
+  "maintenanceAnnual",
+  "taxState",
 ];
 
 // Returning visitors keep their last metro (no flash, no re-detect).
@@ -63,19 +78,33 @@ function storedLocation(): LocationData {
   return usHome;
 }
 
-// Whitelist to known numeric fields and drop anything non-finite, so corrupted
-// storage (e.g. {homePrice: null} or {propertyTaxRate: {}}) can't reach the
-// engine and render $NaN / a bogus $0 home.
+// Whitelist to known fields and validate each by kind, so corrupted storage
+// (e.g. {homePrice: null}, {maintenanceMode: 7}) can't reach the engine and
+// render $NaN / a bogus $0 home or break a control.
 function loadOverrides(): Partial<CalcInputs> {
   try {
     const raw = localStorage.getItem(OVERRIDES_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const clean: Partial<CalcInputs> = {};
-    for (const k of PERSIST_FIELDS) {
+    for (const k of PERSIST_KEYS) {
       const v = parsed[k];
-      const n = typeof v === "string" ? Number(v) : v;
-      if (typeof n === "number" && Number.isFinite(n)) clean[k] = n as never;
+      switch (PERSIST_SPEC[k]) {
+        case "number": {
+          const n = typeof v === "string" ? Number(v) : v;
+          if (typeof n === "number" && Number.isFinite(n)) clean[k] = n as never;
+          break;
+        }
+        case "mode":
+          if (v === "pct" || v === "amount") clean[k] = v as never;
+          break;
+        case "boolean":
+          if (typeof v === "boolean") clean[k] = v as never;
+          break;
+        case "string":
+          if (typeof v === "string") clean[k] = v as never;
+          break;
+      }
     }
     return clean;
   } catch {
@@ -94,13 +123,25 @@ function saveOverrides(o: Partial<CalcInputs>) {
 
 export function App() {
   const overrides = useRef<Partial<CalcInputs>>(loadOverrides());
+  // True once the user edits any input; gates the one-time re-seed from live data.
+  const touched = useRef(false);
+  const [market, setMarket] = useState<MarketData>(() => marketRaw as MarketData);
   const [selected, setSelected] = useState<LocationData>(storedLocation);
   const [inputs, setInputs] = useState<CalcInputs>(() => ({
-    ...buildInputs(storedLocation(), market, propertyTax, insurance),
+    ...buildInputs(storedLocation(), marketRaw as MarketData, propertyTax, insurance),
     ...overrides.current, // restore the user's remembered manual edits
   }));
 
-  const result = useMemo(() => calculate(inputs), [inputs]);
+  // When the tax-rate estimator is on, derive the marginal rate from income +
+  // filing + state at calc time rather than storing it back, so the manual slider
+  // keeps its own value and there's no patch loop.
+  const inputsForCalc = useMemo<CalcInputs>(() => {
+    if (!inputs.taxAuto || inputs.annualIncome <= 0) return inputs;
+    const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
+    return { ...inputs, marginalTaxRate: est.combined };
+  }, [inputs]);
+
+  const result = useMemo(() => calculate(inputsForCalc), [inputsForCalc]);
 
   // Mirror the current selection in a ref so async geo callbacks can tell whether
   // the user has moved on since they were kicked off (avoids yanking the location).
@@ -111,9 +152,10 @@ export function App() {
 
   // Manual edits from the controls. Persist the ones we remember.
   const patch = (p: Partial<CalcInputs>) => {
+    touched.current = true;
     setInputs((prev) => ({ ...prev, ...p }));
     let changed = false;
-    for (const k of PERSIST_FIELDS) {
+    for (const k of PERSIST_KEYS) {
       if (k in p) {
         overrides.current[k] = p[k] as never;
         changed = true;
@@ -126,13 +168,21 @@ export function App() {
     setSelected(loc);
     // Set location-derived fields directly (not via patch) so they aren't
     // recorded as manual overrides.
-    setInputs((prev) => ({
-      ...prev,
-      homePrice: loc.homeValue,
-      monthlyRent: loc.rent,
-      propertyTaxRate: propertyTax[loc.state] ?? prev.propertyTaxRate,
-      homeInsuranceRate: insurance[loc.state] ?? prev.homeInsuranceRate,
-    }));
+    setInputs((prev) => {
+      const insRate = insurance[loc.state] ?? prev.homeInsuranceRate;
+      return {
+        ...prev,
+        homePrice: loc.homeValue,
+        monthlyRent: loc.rent,
+        propertyTaxRate: propertyTax[loc.state] ?? prev.propertyTaxRate,
+        homeInsuranceRate: insRate,
+        // Re-seed the flat-dollar figures off the new home value so a %/$ toggle
+        // reflects the place you just picked, and point the tax estimator at it.
+        homeInsuranceAnnual: Math.round(loc.homeValue * insRate),
+        maintenanceAnnual: Math.round(loc.homeValue * prev.maintenanceRate),
+        taxState: loc.state,
+      };
+    });
     // A new place invalidates place-specific overrides (kept personal ones).
     let changed = false;
     for (const k of LOCATION_FIELDS) {
@@ -194,6 +244,25 @@ export function App() {
     });
   }
 
+  // Pull the freshest committed market data from the CDN once on load. If the user
+  // hasn't touched anything yet, re-seed inputs from it so the headline calc uses
+  // the fresher rates too; otherwise just update the live badges and "as of" date.
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveMarket().then((live) => {
+      if (cancelled || !live) return;
+      setMarket(live);
+      if (!touched.current && Object.keys(overrides.current).length === 0) {
+        const loc = locations.find((l) => l.id === selectedRef.current) ?? selected;
+        setInputs(buildInputs(loc, live, propertyTax, insurance));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // First visit with no saved metro: auto-detect from IP (silent fallback to US).
   const detected = useRef(false);
   useEffect(() => {
@@ -227,7 +296,7 @@ export function App() {
 
   return (
     <div className="min-h-screen">
-      <Header />
+      <Header market={market} />
 
       <main className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
         <Hero metro={selected.metro} result={result} inputs={inputs} />
@@ -297,13 +366,13 @@ export function App() {
           </Disclosure>
         </div>
 
-        <Sources />
+        <Sources market={market} />
       </main>
     </div>
   );
 }
 
-function Header() {
+function Header({ market }: { market: MarketData }) {
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -427,7 +496,7 @@ function Legend() {
   );
 }
 
-function Sources() {
+function Sources({ market }: { market: MarketData }) {
   const items: { label: string; value: string; href: string }[] = [
     {
       label: "Mortgage rates",

@@ -33,10 +33,18 @@ export interface CalcInputs {
   investmentReturn: number; // annual opportunity / discount rate, e.g. 0.05
   inflation: number; // annual, e.g. 0.024
 
-  // Recurring ownership costs
+  // Recurring ownership costs.
+  // Maintenance and insurance can be entered two ways (per `*Mode`):
+  //   "pct"    - a fraction of the *current* (appreciating) home value / yr.
+  //   "amount" - a flat dollar figure / yr in today's dollars, grown with inflation.
+  // The engine reads `*Rate` in pct mode and `*Annual` in amount mode.
   propertyTaxRate: number; // of current home value / yr, e.g. 0.011
+  maintenanceMode: "pct" | "amount";
   maintenanceRate: number; // of current home value / yr, e.g. 0.01
+  maintenanceAnnual: number; // $/yr in today's dollars, e.g. 4000
+  homeInsuranceMode: "pct" | "amount";
   homeInsuranceRate: number; // of current home value / yr, e.g. 0.005
+  homeInsuranceAnnual: number; // $/yr in today's dollars, e.g. 1800
   hoaMonthly: number; // grows with inflation
   extraUtilitiesMonthly: number; // owning vs renting delta, grows with inflation
 
@@ -54,6 +62,13 @@ export interface CalcInputs {
   saltCap: number; // e.g. 10000
   filingJointly: boolean; // cap-gains exclusion 500k vs 250k
   capitalGainsRate: number; // e.g. 0.15
+  // UI-derived: when `taxAuto` is on, the controls estimate `marginalTaxRate`
+  // from income + filing status + state (federal marginal + state marginal). The
+  // engine never reads these three; it only consumes the resulting marginalTaxRate.
+  taxAuto: boolean;
+  annualIncome: number; // household gross income, for the marginal-rate estimate
+  taxState: string; // 2-letter state code ("US" = no state income tax applied)
+  localTaxRate: number; // optional city/county income tax added onto the estimate
 
   // Rent side
   monthlyRent: number; // market rent being compared
@@ -176,11 +191,18 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       balance -= principal;
     }
 
-    // Recurring carrying costs (proportional to current value / inflation-grown)
-    const propTax = (homeValue * inp.propertyTaxRate) / 12;
-    const maint = (homeValue * inp.maintenanceRate) / 12;
-    const ins = (homeValue * inp.homeInsuranceRate) / 12;
+    // Recurring carrying costs. Percent-of-value items ride the appreciating home
+    // value; flat-dollar items (and HOA/utilities) ride inflation instead.
     const infl = Math.pow(1 + inp.inflation, yearFrac);
+    const propTax = (homeValue * inp.propertyTaxRate) / 12;
+    const maint =
+      inp.maintenanceMode === "amount"
+        ? (inp.maintenanceAnnual * infl) / 12
+        : (homeValue * inp.maintenanceRate) / 12;
+    const ins =
+      inp.homeInsuranceMode === "amount"
+        ? (inp.homeInsuranceAnnual * infl) / 12
+        : (homeValue * inp.homeInsuranceRate) / 12;
     const hoa = inp.hoaMonthly * infl;
     const util = inp.extraUtilitiesMonthly * infl;
     const pmi = balance / inp.homePrice > 0.8 ? (loan * inp.pmiRate) / 12 : 0;

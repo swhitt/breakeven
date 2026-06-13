@@ -11,8 +11,12 @@ const base: CalcInputs = {
   investmentReturn: 0.05,
   inflation: 0.024,
   propertyTaxRate: 0.011,
+  maintenanceMode: "pct",
   maintenanceRate: 0.01,
+  maintenanceAnnual: 4000,
+  homeInsuranceMode: "pct",
   homeInsuranceRate: 0.005,
+  homeInsuranceAnnual: 2000,
   hoaMonthly: 0,
   extraUtilitiesMonthly: 0,
   buyingClosingPct: 0.03,
@@ -24,6 +28,10 @@ const base: CalcInputs = {
   saltCap: 40400,
   filingJointly: true,
   capitalGainsRate: 0.15,
+  taxAuto: false,
+  annualIncome: 0,
+  taxState: "US",
+  localTaxRate: 0,
   monthlyRent: 2200,
   rentGrowth: 0.03,
   rentersInsuranceMonthly: 15,
@@ -88,6 +96,30 @@ describe("calculate", () => {
     const noPmi = calculate({ ...base, downPaymentPct: 0.5 });
     const totalPmi = noPmi.years.reduce((s, y) => s + y.pmi, 0);
     expect(totalPmi).toBe(0);
+  });
+
+  it("dollar-mode maintenance equals percent-mode when value is flat (no appreciation/inflation)", () => {
+    // With a static home value and no inflation, $4,000/yr and 1%-of-$400k are the
+    // same stream, so the two modes must produce an identical breakeven.
+    const flat = { ...base, homeAppreciation: 0, inflation: 0 };
+    const asPct = calculate({ ...flat, maintenanceMode: "pct", maintenanceRate: 0.01 });
+    const asAmt = calculate({ ...flat, maintenanceMode: "amount", maintenanceAnnual: 4000 });
+    expect(asAmt.breakevenRent).toBeCloseTo(asPct.breakevenRent, 4);
+  });
+
+  it("a bigger flat insurance figure raises the cost of buying (higher breakeven rent)", () => {
+    const cheap = calculate({ ...base, homeInsuranceMode: "amount", homeInsuranceAnnual: 1000 });
+    const pricey = calculate({ ...base, homeInsuranceMode: "amount", homeInsuranceAnnual: 6000 });
+    expect(pricey.breakevenRent).toBeGreaterThan(cheap.breakevenRent);
+  });
+
+  it("flat-dollar costs ride inflation, not appreciation", () => {
+    // Same starting dollar, but percent-mode tracks a fast-appreciating home while
+    // amount-mode only tracks (slower) inflation, so percent-mode costs more.
+    const hot = { ...base, homeAppreciation: 0.08, inflation: 0.02, maintenanceAnnual: 4000, maintenanceRate: 0.01 };
+    const pctMode = calculate({ ...hot, maintenanceMode: "pct" });
+    const amtMode = calculate({ ...hot, maintenanceMode: "amount" });
+    expect(pctMode.breakevenRent).toBeGreaterThan(amtMode.breakevenRent);
   });
 
   it("caps deductible mortgage interest at the acquisition-debt limit on jumbo loans", () => {
