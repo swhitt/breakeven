@@ -122,20 +122,23 @@ describe("calculate", () => {
     expect(pctMode.breakevenRent).toBeGreaterThan(amtMode.breakevenRent);
   });
 
-  it("caps deductible mortgage interest at the acquisition-debt limit on jumbo loans", () => {
-    // $2M home, 20% down => $1.6M loan, above both caps. Neutralize the other
-    // filing-status effects (cap-gains rate 0, equal standard deduction) so only
-    // the $750k (joint) vs $375k (single) interest cap differs.
+  it("applies the $750k acquisition-debt cap to single and joint alike (MFS unmodeled)", () => {
+    // $2M home, 20% down => $1.6M loan, above the cap. Neutralize cap-gains and
+    // equalize the standard deduction so only an interest-cap difference could show.
     const jumbo = { ...base, homePrice: 2_000_000, capitalGainsRate: 0, standardDeduction: 30000 };
     const joint = calculate({ ...jumbo, filingJointly: true });
     const single = calculate({ ...jumbo, filingJointly: false });
-    // Joint deducts interest on $750k vs single's $375k, so buying is cheaper.
-    expect(joint.breakevenRent).toBeLessThan(single.breakevenRent);
+    // Single/HoH/MFJ all get the $750k cap (only true MFS is $375k, not modeled),
+    // so the filing toggle doesn't change the deductible-interest fraction.
+    expect(single.breakevenRent).toBeCloseTo(joint.breakevenRent, 6);
 
-    // A sub-cap loan isn't affected by the interest cap (both fractions = 1).
-    const small = { ...base, homePrice: 300_000, capitalGainsRate: 0, standardDeduction: 30000 };
-    const sJoint = calculate({ ...small, filingJointly: true });
-    const sSingle = calculate({ ...small, filingJointly: false });
-    expect(sJoint.breakevenRent).toBeCloseTo(sSingle.breakevenRent, 6);
+    // The cap actually bites: a sub-cap loan deducts all its interest, so dropping
+    // the deductible fraction (bigger loan) raises buying's cost (higher breakeven).
+    const underCap = calculate({ ...base, homePrice: 800_000, standardDeduction: 30000 }); // $640k loan
+    const overCap = calculate({ ...base, homePrice: 2_000_000, standardDeduction: 30000 }); // $1.6M loan
+    expect(underCap.years[0].taxBenefit).toBeGreaterThan(0);
+    // Deductible fraction at $1.6M is 750/1600 ≈ 0.47, so far less interest is
+    // creditable per dollar than the under-cap loan's full deduction.
+    expect(overCap.years[0].interestPaid).toBeGreaterThan(underCap.years[0].interestPaid);
   });
 });

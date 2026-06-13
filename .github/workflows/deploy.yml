@@ -55,6 +55,13 @@ jobs:
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
+      - name: Purge jsDelivr cache for live data
+        # The app fetches market.json from jsDelivr at runtime, so purge after the
+        # weekly sync to serve fresh data without waiting out the CDN TTL.
+        # Best-effort; never fail the deploy over it.
+        continue-on-error: true
+        run: curl -fsS "https://purge.jsdelivr.net/gh/swhitt/breakeven@main/src/data/market.json" || true
+
       - name: Resolve base path for Pages
         env:
           REPO_NAME: ${{ github.event.repository.name }}

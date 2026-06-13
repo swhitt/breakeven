@@ -9,8 +9,10 @@
  *   $40,400 (2026), then +1%/yr through 2029, reverting to $10,000 in 2030
  *   absent new legislation.
  * - Mortgage-interest acquisition-debt cap: interest is deductible only on the
- *   first $750k of acquisition debt ($375k married-filing-separately) under
- *   IRC 163(h)(3); OBBBA made the $750k cap permanent.
+ *   first $750k of acquisition debt under IRC 163(h)(3); OBBBA made it permanent.
+ *   The $750k cap applies to single, head-of-household, AND married-filing-jointly
+ *   alike; only married-filing-separately is $375k, which this model doesn't
+ *   distinguish (our "single" means single/HoH), so we use a single $750k figure.
  */
 export const TAX_YEAR = 2026;
 
@@ -18,4 +20,4 @@ export const STANDARD_DEDUCTION = { joint: 32200, single: 16100 } as const;
 
 export const SALT_CAP = 40400;
 
-export const MORTGAGE_INTEREST_DEBT_CAP = { joint: 750000, single: 375000 } as const;
+export const MORTGAGE_INTEREST_DEBT_CAP = 750000;

@@ -1,26 +1,43 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 
-/** Field label + optional hint/live-data badge, wrapping any control. */
+/**
+ * Field label + optional hint/live-data badge, wrapping any control. Defaults to a
+ * <label> (one control per field). Pass `group` when the body holds several
+ * controls (each with its own label): it renders a labelled group instead, so we
+ * never nest <label> elements, which breaks accessible-name association.
+ */
 export function Field({
   label,
   hint,
   badge,
   children,
+  group = false,
 }: {
   label: string;
   hint?: ReactNode;
   badge?: ReactNode;
   children: ReactNode;
+  group?: boolean;
 }) {
-  return (
-    <label className="block">
+  const id = useId();
+  const body = (
+    <>
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-        <span className="whitespace-nowrap text-sm font-medium text-ink">{label}</span>
+        <span id={group ? id : undefined} className="whitespace-nowrap text-sm font-medium text-ink">
+          {label}
+        </span>
         {badge}
       </div>
       {children}
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
-    </label>
+    </>
+  );
+  return group ? (
+    <div role="group" aria-labelledby={id}>
+      {body}
+    </div>
+  ) : (
+    <label className="block">{body}</label>
   );
 }
 

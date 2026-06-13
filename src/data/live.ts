@@ -8,19 +8,28 @@ import type { MarketData } from "./types";
 const CDN = "https://cdn.jsdelivr.net/gh/swhitt/breakeven@main/src/data";
 const TIMEOUT_MS = 6000;
 
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+// Validate every numeric leaf the app actually reads off live data, not just a
+// couple. A half-written commit or schema drift can yield valid JSON with one
+// missing field, and clamp()/Math.max() on undefined silently produce NaN that
+// then floods the whole sim, defeating the bundled-fallback guarantee.
 function isMarket(v: unknown): v is MarketData {
   if (!v || typeof v !== "object") return false;
   const m = v as Record<string, unknown>;
   const mortgage = m.mortgage as Record<string, unknown> | undefined;
+  const inflation = m.inflation as Record<string, unknown> | undefined;
   const national = m.national as Record<string, unknown> | undefined;
   return (
     typeof m.asOf === "string" &&
     !!mortgage &&
-    typeof mortgage.rate30 === "number" &&
-    Number.isFinite(mortgage.rate30) &&
+    num(mortgage.rate30) &&
+    num(mortgage.rate15) &&
+    !!inflation &&
+    num(inflation.rate) &&
     !!national &&
-    typeof national.homeValue === "number" &&
-    Number.isFinite(national.homeValue)
+    num(national.homeValue) &&
+    num(national.rent)
   );
 }
 

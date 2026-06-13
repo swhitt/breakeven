@@ -50,10 +50,7 @@ jobs:
           fi
 
       - name: Purge jsDelivr cache
-        # Best-effort: let the CDN serve the new files without waiting out its TTL.
-        # Never fail the run over a flaky purge endpoint.
+        # Best-effort: let the CDN serve the new market.json (the only file fetched
+        # live) without waiting out its TTL. Never fail the run over a flaky purge.
         continue-on-error: true
-        run: |
-          for f in market.json locations.json; do
-            curl -fsS "https://purge.jsdelivr.net/gh/swhitt/breakeven@main/src/data/$f" || true
-          done
+        run: curl -fsS "https://purge.jsdelivr.net/gh/swhitt/breakeven@main/src/data/market.json" || true

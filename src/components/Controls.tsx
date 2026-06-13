@@ -113,6 +113,7 @@ function CostRow({
 function StateSelect({ value, onChange }: { value: string; onChange: (s: string) => void }) {
   return (
     <select
+      aria-label="State"
       value={STATE_TAX[value] ? value : "US"}
       onChange={(e) => onChange(e.target.value)}
       className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-[15px] font-medium outline-none focus:border-ink focus:ring-2 focus:ring-ink/10"
@@ -129,9 +130,11 @@ function StateSelect({ value, onChange }: { value: string; onChange: (s: string)
 
 /**
  * Marginal income tax rate, either estimated from income + filing + state (so a
- * user who doesn't know their bracket can still see the deduction's impact) or
- * set by hand. In auto mode the engine derives the rate at calc time; this just
- * shows the breakdown.
+ * user who doesn't know their bracket can still see the deduction's impact) or set
+ * by hand. The mortgage-interest and property-tax deductions are federal, so the
+ * engine values them at the federal rate; the state/local rate is shown for context
+ * and its income tax feeds the SALT base. A labelled group, not a <label>, since it
+ * holds several controls.
  */
 function TaxRateControl({ inputs, patch }: { inputs: CalcInputs; patch: Patch }) {
   const auto = inputs.taxAuto;
@@ -142,6 +145,7 @@ function TaxRateControl({ inputs, patch }: { inputs: CalcInputs; patch: Patch })
   return (
     <Field
       label="Income tax rate"
+      group
       badge={
         <Segmented
           value={auto ? "auto" : "manual"}
@@ -154,8 +158,8 @@ function TaxRateControl({ inputs, patch }: { inputs: CalcInputs; patch: Patch })
       }
       hint={
         auto
-          ? "Estimated federal + state marginal rate. Drives the value of the mortgage-interest and property-tax deductions."
-          : "Federal + state + local. Drives the value of the mortgage-interest and property-tax deductions."
+          ? "The federal rate values the mortgage-interest and property-tax deduction; your state and local income tax add to the SALT cap."
+          : "Your federal marginal rate, which values the mortgage-interest and property-tax deduction."
       }
     >
       {auto ? (
@@ -170,25 +174,27 @@ function TaxRateControl({ inputs, patch }: { inputs: CalcInputs; patch: Patch })
               <StateSelect value={inputs.taxState} onChange={(s) => patch({ taxState: s })} />
             </label>
           </div>
-          <Slider
-            value={inputs.localTaxRate}
-            min={0}
-            max={0.05}
-            step={0.00125}
-            onChange={(n) => patch({ localTaxRate: n })}
-            format={(n) => pct(n, 2)}
-          />
-          <p className="-mt-1 text-xs text-muted">
-            Local (city/county) income tax, on top of state. e.g. NYC ≈ 3.9%, Yonkers, some OH/PA municipalities. Leave
-            at 0 if none.
-          </p>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">Local income tax</span>
+            <Slider
+              value={inputs.localTaxRate}
+              min={0}
+              max={0.05}
+              step={0.00125}
+              onChange={(n) => patch({ localTaxRate: n })}
+              format={(n) => pct(n, 2)}
+            />
+            <span className="mt-1 block text-xs text-muted">
+              City/county, on top of state. e.g. NYC ≈ 3.9%, Yonkers, some OH/PA municipalities. Leave at 0 if none.
+            </span>
+          </label>
           {hasIncome ? (
             <div className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">
-              <span className="tnum font-bold text-ink">{pct(est.combined, 1)}</span>{" "}
+              <span className="tnum font-bold text-ink">{pct(est.federal, 1)}</span>{" "}
               <span className="text-muted">
-                marginal = federal {pct(est.federal, 1)}
+                federal rate values the deduction · {pct(est.combined, 1)} combined marginal (fed {pct(est.federal, 1)}
                 {est.state > 0 && stateLabel ? ` + ${stateLabel} ${pct(est.state, 1)}` : ""}
-                {est.local > 0 ? ` + local ${pct(est.local, 1)}` : ""}
+                {est.local > 0 ? ` + local ${pct(est.local, 1)}` : ""})
               </span>
             </div>
           ) : (
@@ -446,7 +452,9 @@ export function Controls({
             onChange={(n) => patch({ sellingCostPct: n })}
             format={(n) => pct(n, 1)}
           />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* These labels are long; the controls column narrows to 380px at lg, so
+              stack them there to avoid the labels colliding (2-up in roomier widths). */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
             <Field label="HOA / common (monthly)">
               <MoneyInput value={inputs.hoaMonthly} onChange={(n) => patch({ hoaMonthly: n })} step={25} />
             </Field>

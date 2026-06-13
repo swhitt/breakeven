@@ -102,6 +102,20 @@ function marginalRate(brackets: Bracket[], taxable: number): number {
   return brackets.length ? brackets[brackets.length - 1].rate : 0;
 }
 
+/** Total tax owed across an ascending bracket schedule (the area under it). */
+function totalTax(brackets: Bracket[], taxable: number): number {
+  let tax = 0;
+  let lower = 0;
+  for (const b of brackets) {
+    const upper = b.upTo == null ? Infinity : b.upTo;
+    const span = Math.min(taxable, upper) - lower;
+    if (span > 0) tax += span * b.rate;
+    if (taxable <= upper) break;
+    lower = upper;
+  }
+  return tax;
+}
+
 export interface MarginalEstimate {
   federal: number;
   state: number;
@@ -129,4 +143,25 @@ export function estimateMarginalRate(
   const local = Number.isFinite(localRate) && localRate > 0 ? localRate : 0;
   const combined = Math.min(0.99, federal + state + local);
   return { federal, state, local, combined };
+}
+
+/**
+ * Estimate total annual state + local income tax, for the SALT deduction base.
+ * State income tax (plus any local income tax) is itself a SALT itemized
+ * deduction alongside property tax, jointly capped, so the engine needs the
+ * dollar amount, not just the marginal rate. Same standard-deduction proxy and
+ * estimate caveats as estimateMarginalRate.
+ */
+export function estimateStateIncomeTax(
+  income: number,
+  filingJointly: boolean,
+  stateCode: string,
+  localRate = 0,
+): number {
+  const status = filingJointly ? "joint" : "single";
+  const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
+  const st = STATE_TAX[stateCode];
+  const stateTax = st ? totalTax(st[status], taxable) : 0;
+  const local = Number.isFinite(localRate) && localRate > 0 ? localRate * taxable : 0;
+  return Math.round(stateTax + local);
 }

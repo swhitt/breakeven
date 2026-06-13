@@ -153,10 +153,10 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   const closing = inp.homePrice * inp.buyingClosingPct;
 
   // IRC 163(h)(3): mortgage interest is deductible only on the first $750k of
-  // acquisition debt ($375k MFS). Scale the deductible interest by that fraction
-  // (1 for loans at or under the cap, so most metros are unaffected).
-  const acqDebtCap = inp.filingJointly ? MORTGAGE_INTEREST_DEBT_CAP.joint : MORTGAGE_INTEREST_DEBT_CAP.single;
-  const deductibleIntFrac = loan > 0 ? Math.min(1, acqDebtCap / loan) : 1;
+  // acquisition debt (same cap for single/HoH/MFJ; MFS's $375k isn't modeled).
+  // Scale deductible interest by that fraction (1 at or under the cap, so most
+  // metros are unaffected).
+  const deductibleIntFrac = loan > 0 ? Math.min(1, MORTGAGE_INTEREST_DEBT_CAP / loan) : 1;
 
   // Initial outlay happens at t=0, no discount.
   let pv = downPayment + closing;

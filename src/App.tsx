@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { calculate, type CalcInputs } from "./engine/calculator";
 import { buildInputs } from "./engine/defaults";
-import { estimateMarginalRate } from "./engine/taxRates";
+import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
 import { Breakdown } from "./components/Breakdown";
 import { Disclosure } from "./ui";
@@ -48,6 +48,8 @@ const PERSIST_SPEC = {
   homeInsuranceRate: "number",
   homeInsuranceAnnual: "number",
   marginalTaxRate: "number",
+  filingJointly: "boolean",
+  standardDeduction: "number",
   taxAuto: "boolean",
   annualIncome: "number",
   taxState: "string",
@@ -132,13 +134,17 @@ export function App() {
     ...overrides.current, // restore the user's remembered manual edits
   }));
 
-  // When the tax-rate estimator is on, derive the marginal rate from income +
-  // filing + state at calc time rather than storing it back, so the manual slider
-  // keeps its own value and there's no patch loop.
+  // When the tax-rate estimator is on, derive the deduction inputs from income +
+  // filing + state at calc time rather than storing them back, so the manual
+  // controls keep their own values and there's no patch loop. The mortgage-interest
+  // and property-tax deductions are FEDERAL itemized deductions, so they save at
+  // the federal marginal rate; state and local income tax don't raise that rate but
+  // do join property tax in the SALT base (capped), so they feed otherSALT.
   const inputsForCalc = useMemo<CalcInputs>(() => {
     if (!inputs.taxAuto || inputs.annualIncome <= 0) return inputs;
     const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
-    return { ...inputs, marginalTaxRate: est.combined };
+    const stateSalt = estimateStateIncomeTax(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
+    return { ...inputs, marginalTaxRate: est.federal, otherSALT: stateSalt };
   }, [inputs]);
 
   const result = useMemo(() => calculate(inputsForCalc), [inputsForCalc]);

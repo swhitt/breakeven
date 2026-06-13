@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateMarginalRate, STATE_TAX, STATE_OPTIONS } from "./taxRates";
+import { estimateMarginalRate, estimateStateIncomeTax, STATE_TAX, STATE_OPTIONS } from "./taxRates";
 
 describe("estimateMarginalRate", () => {
   it("adds federal and state marginal rates net of the standard deduction", () => {
@@ -40,6 +40,26 @@ describe("estimateMarginalRate", () => {
   it("clamps a stacked combined rate below 100%", () => {
     const e = estimateMarginalRate(5_000_000, false, "CA", 0.5);
     expect(e.combined).toBeLessThanOrEqual(0.99);
+  });
+
+  it("totals state (and local) income tax for the SALT base", () => {
+    // CO flat 4.4% on taxable = 100,000 - 16,100 = $83,900 -> $3,692.
+    expect(estimateStateIncomeTax(100_000, false, "CO")).toBe(3692);
+    // No-tax state and the US sentinel owe nothing.
+    expect(estimateStateIncomeTax(100_000, false, "TX")).toBe(0);
+    expect(estimateStateIncomeTax(100_000, false, "US")).toBe(0);
+    // A 1% local income tax adds 1% of the same taxable base ($839).
+    expect(estimateStateIncomeTax(100_000, false, "CO", 0.01)).toBe(4531);
+  });
+
+  it("totals a progressive schedule as the area under the brackets, not the top rate", () => {
+    // CA single $60k taxable spans several 1-9.3% brackets, so the effective
+    // total is well below the marginal rate times income.
+    const taxable = 60_000;
+    const total = estimateStateIncomeTax(taxable + 16_100, false, "CA");
+    const marginal = estimateMarginalRate(taxable + 16_100, false, "CA").state;
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThan(marginal * taxable); // progressive < flat-at-top
   });
 
   it("covers all 50 states + DC with single and joint schedules", () => {
