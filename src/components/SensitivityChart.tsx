@@ -95,10 +95,11 @@ export function SensitivityChart({ inputs, monthlyRent }: { inputs: CalcInputs; 
   }, [inputs, monthlyRent]);
 
   return (
+    <>
     <div
       className="h-72 w-full sm:h-80"
       role="img"
-      aria-label={`Tornado chart: how far the breakeven rent moves as each assumption varies. Widest mover is ${rows[0]?.label}. The dashed line is your rent of ${usd(monthlyRent)}; bars crossing it could flip the rent-versus-buy verdict.`}
+      aria-label={`Tornado chart: how far the breakeven rent moves as each assumption varies. Widest mover is ${rows[0]?.label}. The dashed line is your rent of ${usd(monthlyRent)}; a bar left of it means buying wins for that range, right of it means renting wins, and a bar crossing it could flip the verdict.`}
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
@@ -135,5 +136,12 @@ export function SensitivityChart({ inputs, monthlyRent }: { inputs: CalcInputs; 
         </BarChart>
       </ResponsiveContainer>
     </div>
+      {/* The x-axis is breakeven rent, so the verdict sides read off the dashed "your rent"
+          line: lower breakeven (left) means buying already wins; higher (right) means renting. */}
+      <div className="mt-2 flex items-center justify-between text-xs">
+        <span className="font-medium text-buy-text">&#9664; buying wins here</span>
+        <span className="font-medium text-rent-text">renting wins here &#9654;</span>
+      </div>
+    </>
   );
 }

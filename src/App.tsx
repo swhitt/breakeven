@@ -558,8 +558,9 @@ export function App() {
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
               <h3 className="text-base font-bold">What actually moves the answer</h3>
               <p className="mb-4 mt-1 text-sm text-muted">
-                Each bar swings one uncertain assumption across a realistic range and shows how far the breakeven rent
-                moves. Widest bars are what your verdict hangs on; any crossing your rent could flip it.
+                Each bar swings one uncertain assumption across a realistic range and shows where the breakeven rent
+                lands. Left of your rent, buying wins; right of it, renting wins. The widest bars are what your verdict
+                hangs on, and any bar crossing your rent is an assumption that could flip it on its own.
               </p>
               <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
                 <SensitivityChart inputs={inputsForCalc} monthlyRent={inputs.monthlyRent} />
