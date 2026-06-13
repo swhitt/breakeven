@@ -158,6 +158,10 @@ export interface YearRow {
   principalPaid: number;
   costs: Record<CostKey, number>; // recurring carrying costs for the year, keyed by registry
   taxBenefit: number; // positive = money back (itemization premium over the standard deduction)
+  // The two itemized-deduction components the tax benefit is built from, exposed so the
+  // "show your work" panel narrates the engine's actual numbers instead of re-deriving them.
+  deductibleInterest: number; // mortgage interest left deductible after the 163(h)(3) cap
+  saltUsed: number; // property tax + other SALT, after the SALT cap
   homeValue: number;
   loanBalance: number;
   equity: number;
@@ -337,6 +341,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           principalPaid: yrPrincipal,
           costs: yrCosts,
           taxBenefit: yrTaxBenefit,
+          deductibleInterest: yrDeductibleInterest,
+          saltUsed,
           homeValue,
           loanBalance: balance,
           equity: homeValue - balance,

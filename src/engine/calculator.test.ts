@@ -162,6 +162,18 @@ describe("calculate", () => {
     // per dollar of interest is higher late than early (frozen-at-origination wouldn't move).
     expect(late).toBeGreaterThan(early);
   });
+
+  it("exposes the itemization components its tax benefit is built from (single source of truth)", () => {
+    // Jumbo loan, high rate, low standard deduction so itemizing wins and the cap bites.
+    const r = calculate({ ...base, homePrice: 1_500_000, marginalTaxRate: 0.32, standardDeduction: 30000 });
+    const y = r.years[0];
+    expect(y.deductibleInterest).toBeGreaterThan(0);
+    expect(y.deductibleInterest).toBeLessThanOrEqual(y.interestPaid); // the cap can only reduce it
+    // taxBenefit must be exactly reconstructable from the exposed components, so the
+    // "show your work" panel can read them instead of re-deriving (and drifting from) the engine.
+    const itemized = y.deductibleInterest + y.saltUsed;
+    expect(y.taxBenefit).toBeCloseTo(0.32 * Math.max(0, itemized - 30000), 6);
+  });
 });
 
 describe("input sanitization", () => {

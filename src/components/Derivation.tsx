@@ -1,14 +1,7 @@
 import type { ReactNode } from "react";
 import type { CalcResult } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
-import {
-  FEDERAL_BRACKETS,
-  STATE_TAX,
-  bracketTax,
-  estimateMarginalRate,
-  estimateStateIncomeTax,
-  type Bracket,
-} from "../engine/taxRates";
+import { FEDERAL_BRACKETS, STATE_TAX, bracketTax, estimateMarginalRate, type Bracket } from "../engine/taxRates";
 import { MORTGAGE_INTEREST_DEBT_CAP } from "../engine/taxConstants";
 import type { LocationData, MarketData } from "../data/types";
 import { pct, usd } from "../lib/format";
@@ -83,25 +76,20 @@ export function Derivation({
   const status = inputs.filingJointly ? "joint" : "single";
   const taxable = Math.max(0, inputs.annualIncome - inputs.standardDeduction);
   const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
-  const stateTaxDollars = estimateStateIncomeTax(
-    inputs.annualIncome,
-    inputs.filingJointly,
-    inputs.taxState,
-    inputs.localTaxRate,
-  );
   const st = STATE_TAX[inputs.taxState];
   const stateName = st?.name;
   const stateNone = !!st && st[status].length === 1 && st[status][0].rate === 0;
   const stateFlat = !!st && st[status].length === 1 && st[status][0].rate > 0;
   const autoLive = inputs.taxAuto && inputs.annualIncome > 0;
 
-  // Year-1 deduction picture, straight off the engine's first row.
+  // Year-1 deduction picture, read straight off the engine's first row so this panel
+  // narrates the engine's actual itemization math rather than re-deriving (and drifting
+  // from) it. intFrac is the engine's realized deductible fraction (it rides the
+  // amortizing balance month-by-month, not the original loan).
   const y1 = result.years[0];
   const loan = inputs.homePrice * (1 - inputs.downPaymentPct);
-  const intFrac = loan > 0 ? Math.min(1, MORTGAGE_INTEREST_DEBT_CAP / loan) : 1;
-  const saltDollars = autoLive ? stateTaxDollars : inputs.otherSALT;
-  const saltUsed = Math.min((y1?.costs.propertyTax ?? 0) + saltDollars, inputs.saltCap);
-  const itemized = (y1?.interestPaid ?? 0) * intFrac + saltUsed;
+  const intFrac = y1 && y1.interestPaid > 0 ? y1.deductibleInterest / y1.interestPaid : 1;
+  const itemized = (y1?.deductibleInterest ?? 0) + (y1?.saltUsed ?? 0);
   const itemizes = (y1?.taxBenefit ?? 0) > 0;
 
   // Actual tax owed, summed across the full bracket schedule (not marginal * income).
