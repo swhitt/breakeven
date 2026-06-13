@@ -14,8 +14,8 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <span className="min-w-0 text-sm font-medium text-ink">{label}</span>
+      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+        <span className="whitespace-nowrap text-sm font-medium text-ink">{label}</span>
         {badge}
       </div>
       {children}
