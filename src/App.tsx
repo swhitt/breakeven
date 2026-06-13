@@ -701,10 +701,10 @@ function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
   const y1 = result.years[0];
   if (!y1) return null;
   const pni = result.monthlyPayment;
-  const propertyTax = y1.propertyTax / 12;
-  const insurance = y1.insurance / 12;
-  const hoa = y1.hoa / 12;
-  const pmi = y1.pmi / 12;
+  const propertyTax = y1.costs.propertyTax / 12;
+  const insurance = y1.costs.insurance / 12;
+  const hoa = y1.costs.hoa / 12;
+  const pmi = y1.costs.pmi / 12;
   const taxBenefit = y1.taxBenefit / 12;
   const gross = pni + propertyTax + insurance + hoa + pmi;
   const net = gross - taxBenefit;

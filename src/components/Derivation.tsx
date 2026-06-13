@@ -100,7 +100,7 @@ export function Derivation({
   const loan = inputs.homePrice * (1 - inputs.downPaymentPct);
   const intFrac = loan > 0 ? Math.min(1, MORTGAGE_INTEREST_DEBT_CAP / loan) : 1;
   const saltDollars = autoLive ? stateTaxDollars : inputs.otherSALT;
-  const saltUsed = Math.min((y1?.propertyTax ?? 0) + saltDollars, inputs.saltCap);
+  const saltUsed = Math.min((y1?.costs.propertyTax ?? 0) + saltDollars, inputs.saltCap);
   const itemized = (y1?.interestPaid ?? 0) * intFrac + saltUsed;
   const itemizes = (y1?.taxBenefit ?? 0) > 0;
 

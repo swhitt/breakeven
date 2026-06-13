@@ -80,17 +80,82 @@ export interface CalcInputs {
   brokerFeeMonths: number; // e.g. 0
 }
 
+/**
+ * Recurring carrying costs of owning, as a registry the simulation, the breakdown
+ * table, and the composition chart all read from. Adding a cost (or, later, a
+ * rent-side cost like moving expenses) is a single entry here instead of a hand-
+ * synced edit across the loop, the row shape, the chart buckets, and the table.
+ */
+export type CostKey = "propertyTax" | "maintenance" | "insurance" | "hoa" | "pmi";
+
+export interface CostContext {
+  homePrice: number;
+  homeValue: number; // current (appreciated) value
+  inflationFactor: number; // (1 + inflation)^yearFraction
+  loanBalance: number; // after this month's principal
+  originalLoan: number;
+}
+
+export interface RecurringCost {
+  key: CostKey;
+  label: string;
+  side: "buy" | "rent";
+  deductibleSALT?: boolean; // counts toward the SALT itemized base (capped)
+  monthly: (inp: CalcInputs, ctx: CostContext) => number;
+}
+
+export const RECURRING_COSTS: RecurringCost[] = [
+  {
+    key: "propertyTax",
+    label: "Property tax",
+    side: "buy",
+    deductibleSALT: true,
+    monthly: (i, c) => monthlyCostFromBasis(i.propertyTax, c.homeValue, c.inflationFactor),
+  },
+  {
+    key: "maintenance",
+    label: "Maintenance",
+    side: "buy",
+    monthly: (i, c) => monthlyCostFromBasis(i.maintenance, c.homeValue, c.inflationFactor),
+  },
+  {
+    key: "insurance",
+    label: "Insurance",
+    side: "buy",
+    monthly: (i, c) => monthlyCostFromBasis(i.homeInsurance, c.homeValue, c.inflationFactor),
+  },
+  {
+    // HOA dues plus the owning-vs-renting utilities delta, both inflation-grown.
+    key: "hoa",
+    label: "HOA / other",
+    side: "buy",
+    monthly: (i, c) => (i.hoaMonthly + i.extraUtilitiesMonthly) * c.inflationFactor,
+  },
+  {
+    // While LTV (against the original price) is over 80%, charged on the original loan.
+    key: "pmi",
+    label: "PMI",
+    side: "buy",
+    monthly: (i, c) => (c.loanBalance / c.homePrice > 0.8 ? (c.originalLoan * i.pmiRate) / 12 : 0),
+  },
+];
+
+const BUY_COSTS = RECURRING_COSTS.filter((c) => c.side === "buy");
+
+/** A fresh per-cost accumulator zeroed for every registry key. */
+function zeroCosts(): Record<CostKey, number> {
+  const o = {} as Record<CostKey, number>;
+  for (const c of RECURRING_COSTS) o[c.key] = 0;
+  return o;
+}
+
 export interface YearRow {
   year: number;
   // buy
   mortgagePaid: number;
   interestPaid: number;
   principalPaid: number;
-  propertyTax: number;
-  maintenance: number;
-  insurance: number;
-  hoa: number;
-  pmi: number;
+  costs: Record<CostKey, number>; // recurring carrying costs for the year, keyed by registry
   taxBenefit: number; // positive = money back (itemization premium over the standard deduction)
   homeValue: number;
   loanBalance: number;
@@ -193,12 +258,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     yrDeductibleInterest = 0,
     yrPrincipal = 0,
     yrMortgage = 0,
-    yrPropTax = 0,
-    yrMaint = 0,
-    yrIns = 0,
-    yrHoa = 0,
-    yrPmi = 0,
     yrTaxBenefit = 0;
+  let yrCosts = zeroCosts();
 
   for (let m = 1; m <= months; m++) {
     const yearFrac = m / 12;
@@ -221,33 +282,36 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       balance -= principal;
     }
 
-    // Recurring carrying costs. Percent-of-value items ride the appreciating home
-    // value; flat-dollar items (and HOA/utilities) ride inflation instead.
+    // Recurring carrying costs from the registry. Percent-of-value items ride the
+    // appreciating home value; flat-dollar items (and HOA/utilities) ride inflation.
     const infl = Math.pow(1 + inp.inflation, yearFrac);
-    const propTax = monthlyCostFromBasis(inp.propertyTax, homeValue, infl);
-    const maint = monthlyCostFromBasis(inp.maintenance, homeValue, infl);
-    const ins = monthlyCostFromBasis(inp.homeInsurance, homeValue, infl);
-    const hoa = inp.hoaMonthly * infl;
-    const util = inp.extraUtilitiesMonthly * infl;
-    const pmi = balance / inp.homePrice > 0.8 ? (loan * inp.pmiRate) / 12 : 0;
+    const ctx: CostContext = {
+      homePrice: inp.homePrice,
+      homeValue,
+      inflationFactor: infl,
+      loanBalance: balance, // post-amortization, for the PMI LTV test
+      originalLoan: loan,
+    };
+    let recurring = 0;
+    for (const c of BUY_COSTS) {
+      const amt = c.monthly(inp, ctx);
+      yrCosts[c.key] += amt;
+      recurring += amt;
+    }
 
-    const monthlyOut = pay + propTax + maint + ins + hoa + util + pmi;
+    const monthlyOut = pay + recurring;
     pv += monthlyOut / df;
 
-    // accumulate for annual rollups
+    // accumulate mortgage rollups (costs accumulate into yrCosts above)
     yrInterest += interest;
     yrPrincipal += principal;
     yrMortgage += pay;
-    yrPropTax += propTax;
-    yrMaint += maint;
-    yrIns += ins;
-    yrHoa += hoa + util;
-    yrPmi += pmi;
 
     // Year boundary: credit the tax benefit (itemization premium over standard).
     // Horizons are always whole years (callers round), so every year is full.
     if (m % 12 === 0) {
-      const saltUsed = Math.min(yrPropTax + inp.otherSALT, inp.saltCap);
+      const saltBase = BUY_COSTS.reduce((s, c) => (c.deductibleSALT ? s + yrCosts[c.key] : s), 0);
+      const saltUsed = Math.min(saltBase + inp.otherSALT, inp.saltCap);
       // PMI is deliberately excluded from itemized deductions. OBBBA restored the
       // mortgage-insurance-premium deduction for 2026+, but it phases out between
       // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
@@ -265,11 +329,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           mortgagePaid: yrMortgage,
           interestPaid: yrInterest,
           principalPaid: yrPrincipal,
-          propertyTax: yrPropTax,
-          maintenance: yrMaint,
-          insurance: yrIns,
-          hoa: yrHoa,
-          pmi: yrPmi,
+          costs: yrCosts,
           taxBenefit: yrTaxBenefit,
           homeValue,
           loanBalance: balance,
@@ -277,7 +337,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           rentPaid: 0, // placeholder, filled by calculate()
         });
       }
-      yrInterest = yrDeductibleInterest = yrPrincipal = yrMortgage = yrPropTax = yrMaint = yrIns = yrHoa = yrPmi = 0;
+      yrInterest = yrDeductibleInterest = yrPrincipal = yrMortgage = 0;
+      yrCosts = zeroCosts();
     }
   }
 

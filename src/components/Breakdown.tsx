@@ -1,11 +1,12 @@
 import { Fragment, useState } from "react";
-import type { YearRow } from "../engine/calculator";
+import { RECURRING_COSTS, type YearRow } from "../engine/calculator";
 import { usd } from "../lib/format";
+
+const sumCosts = (y: YearRow) => Object.values(y.costs).reduce((s, n) => s + n, 0);
 
 // Net annual cash cost of owning: the year's carrying costs and mortgage, less the
 // federal tax benefit. It's the headline each row collapses to; expand for the lines.
-const owningCost = (y: YearRow) =>
-  y.mortgagePaid + y.propertyTax + y.maintenance + y.insurance + y.pmi + y.hoa - y.taxBenefit;
+const owningCost = (y: YearRow) => y.mortgagePaid + sumCosts(y) - y.taxBenefit;
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -26,11 +27,11 @@ function Detail({ y }: { y: YearRow }) {
     { label: "Mortgage", value: y.mortgagePaid },
     { label: "Interest", value: y.interestPaid },
     { label: "Principal", value: y.principalPaid },
-    { label: "Property tax", value: y.propertyTax },
-    { label: "Maintenance", value: y.maintenance },
-    { label: "Insurance", value: y.insurance },
-    ...(y.pmi > 0 ? [{ label: "PMI", value: y.pmi }] : []),
-    ...(y.hoa > 0 ? [{ label: "HOA / other", value: y.hoa }] : []),
+    // Recurring carrying costs straight from the registry; zero ones (PMI/HOA) drop out.
+    ...RECURRING_COSTS.filter((c) => c.side === "buy" && y.costs[c.key] > 0).map((c) => ({
+      label: c.label,
+      value: y.costs[c.key],
+    })),
     {
       label: "Tax benefit",
       value: y.taxBenefit,

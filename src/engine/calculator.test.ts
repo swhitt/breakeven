@@ -86,7 +86,7 @@ describe("calculate", () => {
 
   it("PMI only applies below 20% equity, so a big down payment carries none", () => {
     const noPmi = calculate({ ...base, downPaymentPct: 0.5 });
-    const totalPmi = noPmi.years.reduce((s, y) => s + y.pmi, 0);
+    const totalPmi = noPmi.years.reduce((s, y) => s + y.costs.pmi, 0);
     expect(totalPmi).toBe(0);
   });
 
