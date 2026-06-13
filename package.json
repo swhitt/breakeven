@@ -6,7 +6,7 @@
   "description": "Rent-vs-buy calculator with live data and a year-by-year breakdown of the math.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite-node scripts/gen-og-pages.tsx",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

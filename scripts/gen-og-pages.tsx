@@ -1,0 +1,157 @@
+// Postbuild: for every metro, render a per-scenario Open Graph PNG (the real engine
+// verdict + numbers) and a prerendered HTML page with metro-specific meta, both into
+// dist/. So a shared breakeven.rent/houston-tx link unfurls with Houston's card and
+// Google sees 401 distinct pages. @vercel/og runs fine here (full Node at build time),
+// unlike a plain-Vite serverless function. Runs after `vite build`.
+import { ImageResponse } from "@vercel/og";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { calculate } from "../src/engine/calculator";
+import { buildInputs } from "../src/engine/defaults";
+import { usd } from "../src/lib/format";
+import type { LocationData, MarketData, StateRateTable } from "../src/data/types";
+import locations from "../src/data/locations.json";
+import market from "../src/data/market.json";
+import propertyTax from "../src/data/propertyTax.json";
+import insurance from "../src/data/insurance.json";
+
+const SITE = "https://breakeven.rent";
+const INK = "#1a1a16";
+const MUTED = "#6b6a61";
+const PAPER = "#faf9f5";
+const RENT = "#0d9488";
+const BUY = "#ea580c";
+const TITLE_DEFAULT = "Breakeven: rent vs. buy, with the math shown";
+const DESC_DEFAULT =
+  "Rent-vs-buy with live mortgage rates, rents, and home prices, and a year-by-year breakdown of the math.";
+
+const dist = new URL("../dist/", import.meta.url);
+mkdirSync(new URL("og/", dist), { recursive: true });
+const template = readFileSync(new URL("index.html", dist), "utf8");
+
+const CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 $.,/%?()'-:&";
+async function loadInter(weight: number): Promise<ArrayBuffer> {
+  const css = await (
+    await fetch(`https://fonts.googleapis.com/css2?family=Inter:wght@${weight}&text=${encodeURIComponent(CHARS)}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 6.1)" },
+    })
+  ).text();
+  const url = css.match(/src: url\((.+?)\) format\('(?:opentype|truetype)'\)/)?.[1];
+  if (!url) throw new Error("Inter TTF not found in Google CSS");
+  return await (await fetch(url)).arrayBuffer();
+}
+const [regular, bold] = await Promise.all([loadInter(400), loadInter(800)]);
+
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+interface Card {
+  metro: string;
+  word: string;
+  color: string;
+  takeaway: string;
+  breakeven: string;
+  homePrice: string;
+  rent: string;
+}
+
+function cardFor(loc: LocationData): Card {
+  const inputs = buildInputs(
+    loc,
+    market as unknown as MarketData,
+    propertyTax as unknown as StateRateTable,
+    insurance as unknown as StateRateTable,
+  );
+  const r = calculate(inputs);
+  const closeCall = Math.abs(r.monthlyDifference) < inputs.monthlyRent * 0.05;
+  const renting = r.verdict === "rent";
+  const breakeven = usd(r.breakevenRent);
+  return {
+    metro: loc.metro,
+    word: closeCall ? "Toss-up" : renting ? "Rent" : "Buy",
+    color: closeCall ? INK : renting ? RENT : BUY,
+    takeaway: closeCall
+      ? `Basically a wash, within ${usd(Math.abs(r.monthlyDifference))}/mo of the breakeven.`
+      : renting
+        ? `Renting wins. Buying needs a comparable rent above ${breakeven}/mo to pull ahead.`
+        : `Buying wins. Your rent clears the ${breakeven}/mo breakeven, so owning is cheaper.`,
+    breakeven: `${breakeven}/mo`,
+    homePrice: usd(inputs.homePrice),
+    rent: `${usd(inputs.monthlyRent)}/mo`,
+  };
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", fontSize: 24, color: MUTED, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ display: "flex", fontSize: 40, fontWeight: 700, color: INK }}>{value}</div>
+    </div>
+  );
+}
+
+async function renderPng(d: Card): Promise<Buffer> {
+  const image = new ImageResponse(
+    (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          height: "100%",
+          background: PAPER,
+          padding: 72,
+          justifyContent: "space-between",
+          fontFamily: "Inter",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", fontSize: 40, fontWeight: 800 }}>
+            <span style={{ color: RENT }}>break</span>
+            <span style={{ color: BUY }}>Even</span>
+          </div>
+          <div style={{ display: "flex", fontSize: 26, color: MUTED }}>rent vs. buy, with the math shown</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", fontSize: 32, color: MUTED }}>Should you rent or buy in</div>
+          <div style={{ display: "flex", fontSize: 72, fontWeight: 800, color: INK }}>{d.metro}?</div>
+          <div style={{ display: "flex", fontSize: 92, fontWeight: 800, color: d.color, marginTop: 12 }}>{d.word}</div>
+          <div style={{ display: "flex", fontSize: 34, color: INK, marginTop: 8, maxWidth: 1000 }}>{d.takeaway}</div>
+        </div>
+        <div style={{ display: "flex", gap: 64 }}>
+          <Stat label="Breakeven rent" value={d.breakeven} />
+          <Stat label="Home price" value={d.homePrice} />
+          <Stat label="Comparable rent" value={d.rent} />
+        </div>
+      </div>
+    ),
+    {
+      width: 1200,
+      height: 630,
+      fonts: [
+        { name: "Inter", data: regular, weight: 400, style: "normal" },
+        { name: "Inter", data: bold, weight: 800, style: "normal" },
+      ],
+    },
+  );
+  return Buffer.from(await image.arrayBuffer());
+}
+
+function pageFor(id: string, d: Card): string {
+  const sub = d.word === "Toss-up" ? "too close to call" : d.word === "Rent" ? "renting wins" : "buying wins";
+  const title = `Rent vs. buy in ${d.metro}: ${sub}`;
+  const desc = `${d.takeaway} Breakeven rent ${d.breakeven}, home ${d.homePrice}. Live data, the math shown.`;
+  return template
+    .replaceAll(`${SITE}/og.png`, `${SITE}/og/${id}.png`)
+    .replaceAll(`"${SITE}/"`, `"${SITE}/${id}"`)
+    .replaceAll(TITLE_DEFAULT, esc(title))
+    .replaceAll(DESC_DEFAULT, esc(desc));
+}
+
+let n = 0;
+for (const loc of locations as LocationData[]) {
+  if (loc.id === "united-states") continue; // the root page already covers the national view
+  const d = cardFor(loc);
+  writeFileSync(new URL(`og/${loc.id}.png`, dist), await renderPng(d));
+  writeFileSync(new URL(`${loc.id}.html`, dist), pageFor(loc.id, d));
+  n++;
+}
+console.log(`gen-og-pages: wrote ${n} metro pages + OG cards to dist/`);
