@@ -683,14 +683,15 @@ function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
         </div>
       </div>
       <p className="mt-1 text-sm text-muted">
-        Your all-in monthly housing payment ({included})
+        Your all-in monthly housing payment ({included}) in year 1,
         {taxBenefit > 0 ? (
           <>
             {" "}
-            minus the estimated federal tax benefit, so <span className="text-ink">{usd(gross)}/mo</span> before it.
+            minus the estimated federal tax benefit (what itemizing the mortgage interest and SALT saves over the
+            standard deduction), so <span className="text-ink">{usd(gross)}/mo</span> before it.
           </>
         ) : (
-          " in year 1."
+          " before any tax benefit: at these numbers itemizing doesn't beat the standard deduction, so there's nothing to net out."
         )}
       </p>
       <button
