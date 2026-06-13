@@ -22,7 +22,7 @@ const INSURANCE_PATH = join(DATA_DIR, "insurance.json");
 const HISTORY_PATH = join(DATA_DIR, "history.json");
 
 const FETCH_TIMEOUT_MS = 20_000;
-const USER_AGENT = "buyorwhatever-data-fetch/1.0 (+https://github.com/)";
+const USER_AGENT = "breakeven-data-fetch/1.0 (+https://github.com/swhitt/breakeven)";
 
 // ---------------------------------------------------------------------------
 // Source URLs (verified live as of 2026-06). If one moves, update here.

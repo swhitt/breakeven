@@ -1,4 +1,4 @@
-# buyorwhatever
+# Breakeven
 
 A free, open rent-vs-buy calculator that shows its work. Live mortgage rates, home prices, and rents are baked in fresh, the model is fully transparent and auditable, and there's no lead-gen.
 
@@ -28,8 +28,8 @@ A scheduled GitHub Action pulls fresh public data on each deploy and weekly ther
 | Home prices & rents (400+ metros) | Zillow ZHVI / ZORI |
 | Inflation | BLS CPI-U |
 | Home-price appreciation | Zillow ZHVI national CAGR |
-| Property tax by state | Tax Foundation (2024 effective rates) |
-| Home insurance by state | Bankrate state averages / Zillow ZHVI (effective rate) |
+| Property tax by state | WalletHub / Census ACS (2024 median effective rates) |
+| Home insurance by state | NAIC HO-3 premiums / Zillow ZHVI (effective rate) |
 | Capital-gains exclusion | IRS Topic 701 |
 
 The fetcher ([`scripts/fetch-data.mjs`](scripts/fetch-data.mjs)) is zero-dependency Node. Each source is fetched independently and falls back to the last committed value if it's unreachable, so a flaky upstream never breaks a deploy.

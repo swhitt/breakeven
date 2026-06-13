@@ -308,7 +308,7 @@ function Header() {
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-extrabold tracking-tight">buyorwhatever</span>
+          <span className="text-lg font-extrabold tracking-tight">Breakeven</span>
           <span className="hidden text-sm text-muted sm:inline">rent vs. buy, with the math shown</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
@@ -316,7 +316,7 @@ function Header() {
             data fresh as of <span className="font-semibold text-ink">{market.asOf}</span>
           </span>
           <a
-            href="https://github.com/swhitt/buyorwhatever"
+            href="https://github.com/swhitt/breakeven"
             className="font-semibold text-ink underline-offset-2 hover:underline"
           >
             GitHub
@@ -501,7 +501,7 @@ function Sources() {
         </p>
         <p className="pt-2">
           Free and open source. Data refreshes automatically.{" "}
-          <a href="https://github.com/swhitt/buyorwhatever" className="font-semibold text-ink hover:underline">
+          <a href="https://github.com/swhitt/breakeven" className="font-semibold text-ink hover:underline">
             View the code and the model on GitHub.
           </a>
         </p>
