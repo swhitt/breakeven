@@ -96,6 +96,36 @@ function setOverride(o: Partial<AppInputs>, k: keyof AppInputs, v: unknown): voi
   (o as Record<string, unknown>)[k] = v;
 }
 
+type FieldKind = "number" | "boolean" | "string" | "costBasis";
+
+// The single validator both untrusted paths (localStorage + share link) run values
+// through, so they can't drift apart (they used to: one coerced numeric strings, one
+// didn't). Returns the validated value, or undefined to drop it.
+function coerceByKind(kind: FieldKind, v: unknown): number | boolean | string | CostBasis | undefined {
+  switch (kind) {
+    case "number": {
+      const n = typeof v === "string" ? Number(v) : v;
+      return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+    }
+    case "boolean":
+      return typeof v === "boolean" ? v : undefined;
+    case "string":
+      return typeof v === "string" ? v : undefined;
+    case "costBasis":
+      return parseCostBasis(v) ?? undefined;
+  }
+}
+
+// The kind of a reference (default) value, so a share link can be validated against the
+// shape of buildInputs() without keeping a second copy of the field-kind knowledge.
+function kindOf(v: unknown): FieldKind | undefined {
+  if (typeof v === "number") return "number";
+  if (typeof v === "boolean") return "boolean";
+  if (typeof v === "string") return "string";
+  if (v !== null && typeof v === "object") return "costBasis";
+  return undefined;
+}
+
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
   try {
@@ -117,25 +147,8 @@ function loadOverrides(): Partial<AppInputs> {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const clean: Partial<AppInputs> = {};
     for (const k of PERSIST_KEYS) {
-      const v = parsed[k];
-      switch (PERSIST_SPEC[k]) {
-        case "number": {
-          const n = typeof v === "string" ? Number(v) : v;
-          if (typeof n === "number" && Number.isFinite(n)) setOverride(clean, k, n);
-          break;
-        }
-        case "boolean":
-          if (typeof v === "boolean") setOverride(clean, k, v);
-          break;
-        case "string":
-          if (typeof v === "string") setOverride(clean, k, v);
-          break;
-        case "costBasis": {
-          const cb = parseCostBasis(v);
-          if (cb) setOverride(clean, k, cb);
-          break;
-        }
-      }
+      const val = coerceByKind(PERSIST_SPEC[k], parsed[k]);
+      if (val !== undefined) setOverride(clean, k, val);
     }
     return clean;
   } catch {
@@ -167,15 +180,10 @@ function readShareLink(): { loc: LocationData; overrides: Partial<AppInputs> } |
     const overrides: Partial<AppInputs> = {};
     for (const k of Object.keys(ref) as (keyof AppInputs)[]) {
       if (!(k in o)) continue;
-      const v = o[k];
-      const r = ref[k];
-      if (typeof r === "number" && typeof v === "number" && Number.isFinite(v)) setOverride(overrides, k, v);
-      else if (typeof r === "boolean" && typeof v === "boolean") setOverride(overrides, k, v);
-      else if (typeof r === "string" && typeof v === "string") setOverride(overrides, k, v);
-      else if (typeof r === "object" && r !== null) {
-        const cb = parseCostBasis(v);
-        if (cb) setOverride(overrides, k, cb);
-      }
+      const kind = kindOf(ref[k]);
+      if (!kind) continue;
+      const val = coerceByKind(kind, o[k]);
+      if (val !== undefined) setOverride(overrides, k, val);
     }
     return { loc, overrides };
   } catch {
