@@ -63,9 +63,13 @@ export function CrossoverChart({
             contentStyle={{
               borderRadius: 12,
               border: "1px solid var(--color-line)",
+              backgroundColor: "var(--color-surface)",
+              color: "var(--color-ink)",
               fontSize: 13,
               boxShadow: "0 8px 24px rgb(0 0 0 / 0.10)",
             }}
+            labelStyle={{ color: "var(--color-muted)" }}
+            itemStyle={{ color: "var(--color-ink)" }}
             formatter={(value: number, name) => [usd(value), name === "buyNetCost" ? "Buying" : "Renting"]}
             labelFormatter={(y) => `After ${y} year${y === 1 ? "" : "s"}`}
           />

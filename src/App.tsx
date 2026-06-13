@@ -6,6 +6,7 @@ import { CrossoverChart } from "./components/CrossoverChart";
 import { Breakdown } from "./components/Breakdown";
 import { Disclosure } from "./ui";
 import { monthsAndYears, pct, usd } from "./lib/format";
+import { ThemeToggle } from "./theme";
 import type { LocationData, MarketData, PropertyTaxTable } from "./data/types";
 
 import marketRaw from "./data/market.json";
@@ -105,6 +106,7 @@ function Header() {
           >
             GitHub
           </a>
+          <ThemeToggle />
         </div>
       </div>
     </header>

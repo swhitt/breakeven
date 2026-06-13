@@ -12,6 +12,17 @@
       content="An honest rent-vs-buy calculator that shows its work. Live mortgage rates, rents, and home prices baked in fresh. No spin, no lead-gen."
     />
     <meta name="theme-color" content="#faf9f5" />
+    <script>
+      // Apply the theme before first paint to avoid a flash of the wrong mode.
+      (function () {
+        try {
+          var saved = localStorage.getItem("theme");
+          var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", dark);
+          if (dark) document.querySelector('meta[name="theme-color"]').content = "#131210";
+        } catch (e) {}
+      })();
+    </script>
     <meta property="og:title" content="buyorwhatever: rent vs. buy, without the spin" />
     <meta
       property="og:description"
