@@ -23,6 +23,9 @@ import insuranceRaw from "./data/insurance.json";
 const CrossoverChart = lazy(() =>
   import("./components/CrossoverChart").then((m) => ({ default: m.CrossoverChart })),
 );
+const AdvantageChart = lazy(() =>
+  import("./components/AdvantageChart").then((m) => ({ default: m.AdvantageChart })),
+);
 
 const locations = locationsRaw as LocationData[];
 // The JSON carries _source/_asOf string metadata alongside the numeric rates,
@@ -377,7 +380,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-clip">
       <Header market={market} />
 
       <main className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
@@ -467,6 +470,24 @@ export function App() {
               </p>
               <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
                 <CrossoverChart
+                  data={result.horizon}
+                  breakevenYear={result.breakevenYear}
+                  yearsToStay={inputs.yearsToStay}
+                />
+              </Suspense>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-base font-bold">How far ahead each option is</h3>
+                <AdvantageLegend />
+              </div>
+              <p className="mb-4 text-sm text-muted">
+                The gap between the two lines above, plotted off a zero line so it's legible. Below zero, renting is
+                ahead by that much; above zero, buying is. Where it crosses is the year buying takes the lead.
+              </p>
+              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
+                <AdvantageChart
                   data={result.horizon}
                   breakevenYear={result.breakevenYear}
                   yearsToStay={inputs.yearsToStay}
@@ -739,6 +760,19 @@ function Legend() {
       </span>
       <span className="flex items-center gap-1.5">
         <span className="inline-block w-4 border-t-2 border-dashed border-rent" /> Renting
+      </span>
+    </div>
+  );
+}
+
+function AdvantageLegend() {
+  return (
+    <div className="flex items-center gap-4 text-xs">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-2 w-2 rounded-sm bg-buy" /> Buying ahead
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-2 w-2 rounded-sm bg-rent" /> Renting ahead
       </span>
     </div>
   );

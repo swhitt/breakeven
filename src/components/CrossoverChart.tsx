@@ -104,14 +104,20 @@ export function CrossoverChart({
             activeDot={{ r: 4 }}
             isAnimationActive={false}
           />
-          {/* Breakeven: a labeled vertical guide plus the crossover dot. */}
+          {/* Breakeven: a full-height guide plus a labeled crossover dot. The label
+              rides the dot (mid-chart) so it stays clear of the top y-axis tick. */}
           {breakevenYear != null && (
-            <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4">
-              <Label value={`breakeven ${breakevenYear}y`} position="insideTopRight" fontSize={11} fill="var(--color-muted)" />
-            </ReferenceLine>
+            <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4" />
           )}
           {cross && (
-            <ReferenceDot x={cross.year} y={cross.buyNetCost} r={5} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2} />
+            <ReferenceDot x={cross.year} y={cross.buyNetCost} r={5} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
+              <Label
+                value={`breakeven ${breakevenYear}y`}
+                position={breakevenYear! > rows.length * 0.62 ? "left" : "right"}
+                fontSize={11}
+                fill="var(--color-muted)"
+              />
+            </ReferenceDot>
           )}
           {/* The user's chosen horizon, ringed in paper so it lifts off the line. */}
           {stay && (
