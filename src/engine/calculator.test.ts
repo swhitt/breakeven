@@ -173,3 +173,41 @@ describe("calculate", () => {
     expect(late).toBeGreaterThan(early);
   });
 });
+
+describe("input sanitization", () => {
+  // Each of these is reachable only via a crafted ?s= share link or a momentarily
+  // empty field, but must never produce NaN/Infinity or a silently-flipped verdict.
+  const allFinite = (r: ReturnType<typeof calculate>) =>
+    [r.breakevenRent, r.buyNetCost, r.rentNetCost, r.monthlyPayment, r.loanAmount].every(Number.isFinite) &&
+    r.horizon.every((p) => Number.isFinite(p.buyNetCost) && Number.isFinite(p.rentNetCost)) &&
+    r.years.every((y) => Number.isFinite(y.equity) && Number.isFinite(y.taxBenefit));
+
+  it("stays finite when home appreciation is below -100%/yr", () => {
+    const r = calculate({ ...base, homeAppreciation: -1.5 });
+    expect(allFinite(r)).toBe(true);
+  });
+
+  it("stays finite (and discounts, not inflates) with a negative investment return", () => {
+    const r = calculate({ ...base, investmentReturn: -1 });
+    expect(allFinite(r)).toBe(true);
+    // A negative discount rate would have blown costs up into the billions.
+    expect(r.buyNetCost).toBeLessThan(5_000_000);
+  });
+
+  it("clamps an out-of-range down payment instead of producing a negative loan", () => {
+    const r = calculate({ ...base, downPaymentPct: 1.5 });
+    expect(r.loanAmount).toBe(0);
+    expect(allFinite(r)).toBe(true);
+  });
+
+  it("treats a zero mortgage term as at least a one-year loan, not a free balloon", () => {
+    const r = calculate({ ...base, mortgageTermYears: 0 });
+    expect(r.monthlyPayment).toBeGreaterThan(0);
+    expect(allFinite(r)).toBe(true);
+  });
+
+  it("survives a negative inflation / rent-growth link", () => {
+    const r = calculate({ ...base, inflation: -2, rentGrowth: -3 });
+    expect(allFinite(r)).toBe(true);
+  });
+});

@@ -121,6 +121,32 @@ export interface CalcResult {
 
 const clampPos = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
 
+/**
+ * Clamp inputs to safe ranges before simulating. The sliders already keep normal
+ * use in range, so this is a no-op for the UI; its job is to stop a crafted ?s=
+ * share link or a momentarily-empty field from driving the sim to NaN/Infinity
+ * (negative-base fractional powers, a negative discount factor) and then having
+ * clampPos launder that into a confident, wrong "buy" verdict.
+ */
+export function sanitizeInputs(inp: CalcInputs): CalcInputs {
+  return {
+    ...inp,
+    homePrice: Math.max(0, inp.homePrice),
+    // Growth rates feed Math.pow(1 + r, t) with fractional t, so 1 + r must stay >= 0.
+    homeAppreciation: Math.max(-1, inp.homeAppreciation),
+    inflation: Math.max(-1, inp.inflation),
+    rentGrowth: Math.max(-1, inp.rentGrowth),
+    mortgageRate: Math.max(0, inp.mortgageRate),
+    // Discount rate is an opportunity cost: negative would inflate future flows.
+    investmentReturn: Math.max(0, inp.investmentReturn),
+    downPaymentPct: Math.min(1, Math.max(0, inp.downPaymentPct)),
+    // Term 0 would skip amortization yet still net out the full balance at sale
+    // (an interest-free balloon); a financed purchase needs at least one year.
+    mortgageTermYears: Math.max(1, inp.mortgageTermYears),
+    yearsToStay: Math.max(1, inp.yearsToStay),
+  };
+}
+
 /** Standard fixed-rate monthly payment. */
 export function monthlyMortgagePayment(loan: number, annualRate: number, termYears: number): number {
   const n = Math.round(termYears * 12);
@@ -313,7 +339,8 @@ function breakevenRentAt(inp: CalcInputs, horizonYears: number, buyPvCost: numbe
   return clampPos((buyPvCost - fixed) / perUnit);
 }
 
-export function calculate(inp: CalcInputs): CalcResult {
+export function calculate(rawInp: CalcInputs): CalcResult {
+  const inp = sanitizeInputs(rawInp);
   const horizon = Math.max(1, Math.round(inp.yearsToStay));
 
   // Headline: full sim at the chosen horizon, with breakdown rows.
