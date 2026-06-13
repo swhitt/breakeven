@@ -94,6 +94,27 @@ describe("calculate", () => {
     expect(r.years[0].interestPaid).toBeGreaterThan(0);
   });
 
+  it("values the mortgage interest deduction incrementally over the standard deduction", () => {
+    // Base case: a modest joint buyer whose interest + property tax stays under the
+    // $32,200 standard deduction never itemizes, so the interest deduction is worth $0.
+    const standardWins = calculate(base);
+    expect(standardWins.years[0].interestDeductionValue).toBe(0);
+
+    // With other SALT large enough that itemizing already beats the standard
+    // deduction, every (sub-cap) interest dollar deducts fully at the marginal rate.
+    const itemizing = calculate({
+      ...base,
+      marginalTaxRate: 0.3,
+      standardDeduction: 20000,
+      otherSALT: 40000,
+      saltCap: 100000,
+    });
+    const y = itemizing.years[0];
+    expect(y.interestDeductionValue).toBeCloseTo(0.3 * y.interestPaid, 4);
+    // And it's only a slice of the total benefit, never more.
+    expect(y.interestDeductionValue).toBeLessThanOrEqual(y.taxBenefit);
+  });
+
   it("PMI only applies below 20% equity, so a big down payment carries none", () => {
     const noPmi = calculate({ ...base, downPaymentPct: 0.5 });
     const totalPmi = noPmi.years.reduce((s, y) => s + y.pmi, 0);

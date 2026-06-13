@@ -5,6 +5,7 @@ export function Breakdown({ years }: { years: YearRow[] }) {
   const cols: { key: keyof YearRow; label: string; tone?: "buy" | "rent" | "good" }[] = [
     { key: "mortgagePaid", label: "Mortgage" },
     { key: "interestPaid", label: "of which interest" },
+    { key: "interestDeductionValue", label: "Interest deduction", tone: "good" },
     { key: "propertyTax", label: "Property tax" },
     { key: "maintenance", label: "Maintenance" },
     { key: "insurance", label: "Insurance" },
@@ -40,7 +41,7 @@ export function Breakdown({ years }: { years: YearRow[] }) {
                   c.tone === "good" ? "text-rent-text" : c.tone === "rent" ? "text-muted" : "text-ink";
                 return (
                   <td key={c.key} className={"whitespace-nowrap px-3 py-2 group-hover:bg-paper " + cls}>
-                    {c.key === "taxBenefit" && v > 0 ? `+${usd(v)}` : usd(v)}
+                    {(c.key === "taxBenefit" || c.key === "interestDeductionValue") && v > 0 ? `+${usd(v)}` : usd(v)}
                   </td>
                 );
               })}
