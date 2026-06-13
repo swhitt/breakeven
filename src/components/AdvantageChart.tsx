@@ -154,6 +154,7 @@ export function AdvantageChart({
           )}
           {cross && (
             <ReferenceDot x={cross.year} y={cross.gap} r={4} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
+              {/* Past ~62% of the x-range a right-anchored label overflows the plot, so flip it left of the dot. */}
               <Label
                 value={`breakeven ${breakevenYear}y`}
                 position={breakevenYear! > rows.length * 0.62 ? "left" : "right"}

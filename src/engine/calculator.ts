@@ -147,9 +147,7 @@ const BUY_COSTS = RECURRING_COSTS.filter((c) => c.side === "buy");
 
 /** A fresh per-cost accumulator zeroed for every registry key. */
 function zeroCosts(): Record<CostKey, number> {
-  const o = {} as Record<CostKey, number>;
-  for (const c of RECURRING_COSTS) o[c.key] = 0;
-  return o;
+  return Object.fromEntries(RECURRING_COSTS.map((c) => [c.key, 0])) as Record<CostKey, number>;
 }
 
 export interface YearRow {
@@ -305,7 +303,6 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     const monthlyOut = pay + recurring;
     pv += monthlyOut / df;
 
-    // accumulate mortgage rollups (costs accumulate into yrCosts above)
     yrInterest += interest;
     yrPrincipal += principal;
     yrMortgage += pay;
@@ -328,7 +325,6 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // rate (a small overstatement when it straddles a bracket).
       const itemized = yrDeductibleInterest + saltUsed;
       const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
-      // credit at end-of-year discount point (use current month's df)
       pv -= benefit / df;
       yrTaxBenefit = benefit;
 
@@ -394,8 +390,10 @@ function simulateRent(inp: CalcInputs, horizonYears: number, monthlyRent: number
 
 /** Closed-form breakeven rent: rent PV is affine in monthlyRent, so solve directly. */
 function breakevenRentAt(inp: CalcInputs, horizonYears: number, buyPvCost: number): number {
-  const perUnit = simulateRent({ ...inp, rentersInsuranceMonthly: 0 }, horizonYears, 1); // slope
-  const fixed = simulateRent({ ...inp, securityDepositMonths: 0, brokerFeeMonths: 0 }, horizonYears, 0); // intercept
+  // slope: rent-proportional flows only (zero renters insurance, the one rent-independent cost)
+  const perUnit = simulateRent({ ...inp, rentersInsuranceMonthly: 0 }, horizonYears, 1);
+  // intercept: rent-independent flows only (zero deposit/broker, which scale with rent)
+  const fixed = simulateRent({ ...inp, securityDepositMonths: 0, brokerFeeMonths: 0 }, horizonYears, 0);
   if (perUnit <= 0) return 0;
   return clampPos((buyPvCost - fixed) / perUnit);
 }

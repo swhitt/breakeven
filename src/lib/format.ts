@@ -21,8 +21,6 @@ export function pct(n: number, digits = 1): string {
   return `${(n * 100).toFixed(digits)}%`;
 }
 
-export function monthsAndYears(years: number | null): string {
-  if (years == null) return "never";
-  if (years <= 1) return "1 year";
-  return `${years} years`;
+export function yearsLabel(years: number | null): string {
+  return years == null ? "never" : years === 1 ? "1 year" : `${years} years`;
 }

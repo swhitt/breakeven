@@ -13,10 +13,6 @@ import {
 import type { HorizonPoint } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 
-interface Row extends HorizonPoint {
-  gap: number;
-}
-
 export function CrossoverChart({
   data,
   breakevenYear,
@@ -26,7 +22,7 @@ export function CrossoverChart({
   breakevenYear: number | null;
   yearsToStay: number;
 }) {
-  const rows: Row[] = data.map((d) => ({ ...d, gap: d.buyNetCost - d.rentNetCost }));
+  const rows = data;
   const cross = breakevenYear ? rows.find((r) => r.year === breakevenYear) : undefined;
   const stay = rows.find((r) => r.year === Math.round(yearsToStay));
 
@@ -111,6 +107,7 @@ export function CrossoverChart({
           )}
           {cross && (
             <ReferenceDot x={cross.year} y={cross.buyNetCost} r={5} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
+              {/* Past ~62% of the x-range a right-anchored label overflows the plot, so flip it left of the dot. */}
               <Label
                 value={`breakeven ${breakevenYear}y`}
                 position={breakevenYear! > rows.length * 0.62 ? "left" : "right"}

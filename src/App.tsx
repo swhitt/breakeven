@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { calculate, type CalcInputs, type CostBasis } from "./engine/calculator";
+import { calculate, type CalcInputs, type CalcResult, type CostBasis } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
 import { Breakdown } from "./components/Breakdown";
 import { Derivation } from "./components/Derivation";
 import { Disclosure } from "./ui";
-import { monthsAndYears, pct, usd } from "./lib/format";
+import { yearsLabel, pct, usd } from "./lib/format";
 import { decodeShare, encodeShare } from "./lib/share";
 import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
@@ -87,6 +87,12 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
+// Each caller validates the value's runtime kind first, but TS can't correlate that
+// check with the key's type, so the one unavoidable index-write cast is localized here.
+function setOverride(o: Partial<AppInputs>, k: keyof AppInputs, v: unknown): void {
+  (o as Record<string, unknown>)[k] = v;
+}
+
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
   try {
@@ -112,18 +118,18 @@ function loadOverrides(): Partial<AppInputs> {
       switch (PERSIST_SPEC[k]) {
         case "number": {
           const n = typeof v === "string" ? Number(v) : v;
-          if (typeof n === "number" && Number.isFinite(n)) clean[k] = n as never;
+          if (typeof n === "number" && Number.isFinite(n)) setOverride(clean, k, n);
           break;
         }
         case "boolean":
-          if (typeof v === "boolean") clean[k] = v as never;
+          if (typeof v === "boolean") setOverride(clean, k, v);
           break;
         case "string":
-          if (typeof v === "string") clean[k] = v as never;
+          if (typeof v === "string") setOverride(clean, k, v);
           break;
         case "costBasis": {
           const cb = parseCostBasis(v);
-          if (cb) clean[k] = cb as never;
+          if (cb) setOverride(clean, k, cb);
           break;
         }
       }
@@ -160,12 +166,12 @@ function readShareLink(): { loc: LocationData; overrides: Partial<AppInputs> } |
       if (!(k in o)) continue;
       const v = o[k];
       const r = ref[k];
-      if (typeof r === "number" && typeof v === "number" && Number.isFinite(v)) overrides[k] = v as never;
-      else if (typeof r === "boolean" && typeof v === "boolean") overrides[k] = v as never;
-      else if (typeof r === "string" && typeof v === "string") overrides[k] = v as never;
+      if (typeof r === "number" && typeof v === "number" && Number.isFinite(v)) setOverride(overrides, k, v);
+      else if (typeof r === "boolean" && typeof v === "boolean") setOverride(overrides, k, v);
+      else if (typeof r === "string" && typeof v === "string") setOverride(overrides, k, v);
       else if (typeof r === "object" && r !== null) {
         const cb = parseCostBasis(v);
-        if (cb) overrides[k] = cb as never;
+        if (cb) setOverride(overrides, k, cb);
       }
     }
     return { loc, overrides };
@@ -226,7 +232,7 @@ export function App() {
     let changed = false;
     for (const k of PERSIST_KEYS) {
       if (k in p) {
-        overrides.current[k] = p[k] as never;
+        setOverride(overrides.current, k, p[k]);
         changed = true;
       }
     }
@@ -618,7 +624,7 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
         ) : (
           <>
             Stay longer than{" "}
-            <span className="font-semibold text-ink">{monthsAndYears(result.breakevenYear)}</span> and the math flips
+            <span className="font-semibold text-ink">{yearsLabel(result.breakevenYear)}</span> and the math flips
             toward owning.
           </>
         )}
@@ -627,11 +633,17 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
   );
 }
 
+// Within 5% of the breakeven the verdict is a near-tie; below that the gap reads
+// like a real rent-vs-buy advantage worth naming.
+const isCloseCall = (result: CalcResult, inputs: CalcInputs) =>
+  Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
+const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
+  isCloseCall(result, inputs) ? "Toss-up" : result.verdict === "rent" ? "Rent it" : "Buy it";
+
 // A one-line verdict for mobile, shown above the controls so there's immediate
 // feedback without scrolling past every input first.
 function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const renting = result.verdict === "rent";
-  const closeCall = Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
   return (
     <div
       className={
@@ -643,7 +655,7 @@ function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calcul
         <div className={"text-[11px] font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
           Verdict
         </div>
-        <div className="text-lg font-extrabold">{closeCall ? "Toss-up" : renting ? "Rent it" : "Buy it"}</div>
+        <div className="text-lg font-extrabold">{verdictLabel(result, inputs)}</div>
       </div>
       <div className="text-right">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Breakeven rent</div>
@@ -656,9 +668,7 @@ function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calcul
 function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const renting = result.verdict === "rent";
   const diff = Math.abs(result.monthlyDifference);
-  // Within 5% of the breakeven the verdict is a near-tie; say so instead of quoting
-  // a dollar gap that reads like a real rent-vs-buy advantage.
-  const closeCall = diff < inputs.monthlyRent * 0.05;
+  const closeCall = isCloseCall(result, inputs);
   return (
     <div
       className={
@@ -671,7 +681,7 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
           <div className={"text-xs font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
             Verdict
           </div>
-          <div className="mt-1 text-2xl font-extrabold">{closeCall ? "Toss-up" : renting ? "Rent it" : "Buy it"}</div>
+          <div className="mt-1 text-2xl font-extrabold">{verdictLabel(result, inputs)}</div>
           <p className="mt-1 text-sm text-muted">
             {closeCall
               ? "Basically a wash, sensitive to your assumptions."
@@ -683,7 +693,7 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
         <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buy wins above this" />
         <Stat
           label="Breakeven horizon"
-          value={result.breakevenYear == null ? "Never" : monthsAndYears(result.breakevenYear)}
+          value={result.breakevenYear == null ? "Never" : yearsLabel(result.breakevenYear)}
           sub={result.breakevenYear == null ? "owning never catches up" : "stay longer, buying wins"}
         />
       </div>

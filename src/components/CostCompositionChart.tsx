@@ -37,8 +37,9 @@ const STACK: StackItem[] = [
 
 interface CompRow {
   year: number;
-  taxCredit: number; // negative tax benefit, so it stacks below zero
+  taxCredit: number; // negated tax benefit, so it stacks below zero under stackOffset="sign"
   raw: YearRow;
+  // Recharts reads each stack item's value by its string key off the row.
   [k: string]: number | YearRow;
 }
 
@@ -119,7 +120,8 @@ export function CostCompositionChart({ years }: { years: YearRow[] }) {
   const ticks = years.filter((_, i) => i % stride === 0).map((y) => y.year);
 
   // Clean, zero-anchored y-ticks across the tallest bar (and the credit dip below 0).
-  const maxTotal = Math.max(...rows.map((r) => items.reduce((s, it) => s + (r[it.key] as number), 0)), 0);
+  // Sum via the typed accessor off raw (not the dynamic row key) to stay cast-free.
+  const maxTotal = Math.max(...rows.map((r) => items.reduce((s, it) => s + it.get(r.raw), 0)), 0);
   const minTotal = showCredit ? Math.min(...rows.map((r) => r.taxCredit), 0) : 0;
   const yTicks = niceTicks(minTotal, maxTotal);
 
