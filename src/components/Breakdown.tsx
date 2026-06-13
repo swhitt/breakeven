@@ -17,12 +17,12 @@ export function Breakdown({ years }: { years: YearRow[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="tnum w-full min-w-[640px] border-collapse text-right text-sm">
+      <table className="tnum w-full min-w-[880px] border-collapse text-right text-sm">
         <thead>
           <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-            <th className="py-2 pr-3 text-left font-semibold">Year</th>
+            <th className="sticky left-0 z-10 bg-surface py-2 pr-3 text-left font-semibold">Year</th>
             {cols.map((c) => (
-              <th key={c.key} className="px-2 py-2 font-semibold">
+              <th key={c.key} className="whitespace-nowrap px-3 py-2 font-semibold">
                 {c.label}
               </th>
             ))}
@@ -30,18 +30,16 @@ export function Breakdown({ years }: { years: YearRow[] }) {
         </thead>
         <tbody>
           {years.map((y) => (
-            <tr key={y.year} className="border-b border-line/60 last:border-0 hover:bg-paper">
-              <td className="py-2 pr-3 text-left font-semibold">{y.year}</td>
+            <tr key={y.year} className="group border-b border-line/60 last:border-0">
+              <td className="sticky left-0 z-10 bg-surface py-2 pr-3 text-left font-semibold group-hover:bg-paper">
+                {y.year}
+              </td>
               {cols.map((c) => {
                 const v = y[c.key] as number;
                 const cls =
-                  c.tone === "good"
-                    ? "text-rent"
-                    : c.tone === "rent"
-                      ? "text-muted"
-                      : "text-ink";
+                  c.tone === "good" ? "text-rent-text" : c.tone === "rent" ? "text-muted" : "text-ink";
                 return (
-                  <td key={c.key} className={"px-2 py-2 " + cls}>
+                  <td key={c.key} className={"whitespace-nowrap px-3 py-2 group-hover:bg-paper " + cls}>
                     {c.key === "taxBenefit" && v > 0 ? `+${usd(v)}` : usd(v)}
                   </td>
                 );

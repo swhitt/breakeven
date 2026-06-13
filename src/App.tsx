@@ -32,18 +32,25 @@ const METRO_KEY = "bow:metro"; // last selected metro (detected or chosen)
 const HOME_KEY = "bow:home"; // the auto-detected locale, never overwritten by manual picks
 const OVERRIDES_KEY = "bow:overrides";
 
-// Manual edits we remember across reloads. All four are numeric, which the
-// loader relies on to drop corrupted (non-finite) persisted values.
+// Manual edits we remember across reloads. All numeric, which the loader relies
+// on to drop corrupted (non-finite) persisted values.
 const PERSIST_FIELDS = [
   "homePrice",
+  "monthlyRent",
   "downPaymentPct",
   "propertyTaxRate",
   "homeInsuranceRate",
   "marginalTaxRate",
 ] as const;
 // Of those, the ones tied to a specific place: cleared when you pick a new metro
-// (the override was for the old location). The rest are personal and always stick.
-const LOCATION_FIELDS: (keyof CalcInputs)[] = ["homePrice", "propertyTaxRate", "homeInsuranceRate"];
+// (the override was for the old location), so they revert to that metro's default.
+// The rest are personal and always stick.
+const LOCATION_FIELDS: (keyof CalcInputs)[] = [
+  "homePrice",
+  "monthlyRent",
+  "propertyTaxRate",
+  "homeInsuranceRate",
+];
 
 // Returning visitors keep their last metro (no flash, no re-detect).
 function storedLocation(): LocationData {
@@ -260,7 +267,7 @@ export function App() {
             />
           </section>
 
-          <section className="space-y-6">
+          <section className="min-w-0 space-y-6">
             <Verdict result={result} inputs={inputs} />
 
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
@@ -280,11 +287,14 @@ export function App() {
                 />
               </Suspense>
             </div>
-
-            <Disclosure summary="Show the year-by-year math">
-              <Breakdown years={result.years} />
-            </Disclosure>
           </section>
+        </div>
+
+        {/* Full-width so the wide year-by-year table has room to breathe. */}
+        <div className="mt-6">
+          <Disclosure summary="Show the year-by-year math">
+            <Breakdown years={result.years} />
+          </Disclosure>
         </div>
 
         <Sources />
