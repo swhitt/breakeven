@@ -31,6 +31,17 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export default function handler(req: Request) {
+  try {
+    return render(req);
+  } catch (err) {
+    return new Response(`OG render failed: ${err instanceof Error ? err.stack : String(err)}`, {
+      status: 500,
+      headers: { "content-type": "text/plain" },
+    });
+  }
+}
+
+function render(req: Request) {
   // req.url is absolute on a Web request but relative on Node serverless; a base makes
   // new URL() safe either way.
   const id = new URL(req.url ?? "/", "https://breakeven.rent").searchParams.get("m") ?? "united-states";
