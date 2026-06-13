@@ -155,6 +155,12 @@ function zeroCosts(): Record<CostKey, number> {
   return Object.fromEntries(RECURRING_COSTS.map((c) => [c.key, 0])) as Record<CostKey, number>;
 }
 
+/** A fresh set of annual accumulators, as one object so the year-end reset is a single
+ *  assignment that can't desync (add a field here and it's reset for free). */
+function zeroYear() {
+  return { interest: 0, deductibleInterest: 0, principal: 0, mortgage: 0, costs: zeroCosts() };
+}
+
 // Year-row aggregations live next to the row so every view derives the same number
 // from one place instead of re-spelling the sum (and silently dropping a new cost).
 
@@ -278,15 +284,10 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   let balance = loan;
   const rows: YearRow[] = [];
 
-  // Annual accumulators for the tax-benefit calc and the breakdown table.
-  // yrDeductibleInterest is interest scaled month-by-month by the IRC 163(h)(3)
-  // acquisition-debt cap (see the loop), separate from yrInterest (cash paid).
-  let yrInterest = 0,
-    yrDeductibleInterest = 0,
-    yrPrincipal = 0,
-    yrMortgage = 0,
-    yrTaxBenefit = 0;
-  let yrCosts = zeroCosts();
+  // Annual accumulators for the tax-benefit calc and the breakdown table. `deductibleInterest`
+  // is interest scaled month-by-month by the IRC 163(h)(3) cap (see the loop), separate from
+  // `interest` (cash paid). One object so the year-end reset can't drift from the fields.
+  let acc = zeroYear();
 
   for (let m = 1; m <= months; m++) {
     const yearFrac = m / 12;
@@ -305,7 +306,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // acquisition debt (same cap for single/HoH/MFJ; MFS's $375k isn't modeled).
       // Acquisition debt falls as you amortize, so the deductible fraction is
       // recomputed off the current balance and rises to 1 once it's under the cap.
-      yrDeductibleInterest += interest * Math.min(1, MORTGAGE_INTEREST_DEBT_CAP / balance);
+      acc.deductibleInterest += interest * Math.min(1, MORTGAGE_INTEREST_DEBT_CAP / balance);
       balance -= principal;
     }
 
@@ -322,21 +323,21 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     let recurring = 0;
     for (const c of BUY_COSTS) {
       const amt = c.monthly(inp, ctx);
-      yrCosts[c.key] += amt;
+      acc.costs[c.key] += amt;
       recurring += amt;
     }
 
     const monthlyOut = pay + recurring;
     pv += monthlyOut / df;
 
-    yrInterest += interest;
-    yrPrincipal += principal;
-    yrMortgage += pay;
+    acc.interest += interest;
+    acc.principal += principal;
+    acc.mortgage += pay;
 
     // Year boundary: credit the tax benefit (itemization premium over standard).
     // Horizons are always whole years (callers round), so every year is full.
     if (m % 12 === 0) {
-      const saltBase = BUY_COSTS.reduce((s, c) => (c.deductibleSALT ? s + yrCosts[c.key] : s), 0);
+      const saltBase = BUY_COSTS.reduce((s, c) => (c.deductibleSALT ? s + acc.costs[c.key] : s), 0);
       const saltUsed = Math.min(saltBase + inp.otherSALT, inp.saltCap);
       // PMI is deliberately excluded from itemized deductions. OBBBA restored the
       // mortgage-insurance-premium deduction for 2026+, but it phases out between
@@ -349,21 +350,19 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // for the common standard-deduction-wins case). Held flat on purpose; revisit
       // if the horizon-tilt matters. The premium is also valued at a single marginal
       // rate (a small overstatement when it straddles a bracket).
-      const itemized = yrDeductibleInterest + saltUsed;
+      const itemized = acc.deductibleInterest + saltUsed;
       const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
       pv -= benefit / df;
-      yrTaxBenefit = benefit;
 
       if (collectRows) {
-        const yIdx = Math.ceil(m / 12);
         rows.push({
-          year: yIdx,
-          mortgagePaid: yrMortgage,
-          interestPaid: yrInterest,
-          principalPaid: yrPrincipal,
-          costs: yrCosts,
-          taxBenefit: yrTaxBenefit,
-          deductibleInterest: yrDeductibleInterest,
+          year: Math.ceil(m / 12),
+          mortgagePaid: acc.mortgage,
+          interestPaid: acc.interest,
+          principalPaid: acc.principal,
+          costs: acc.costs,
+          taxBenefit: benefit,
+          deductibleInterest: acc.deductibleInterest,
           saltUsed,
           homeValue,
           loanBalance: balance,
@@ -371,8 +370,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           rentPaid: 0, // placeholder, filled by calculate()
         });
       }
-      yrInterest = yrDeductibleInterest = yrPrincipal = yrMortgage = 0;
-      yrCosts = zeroCosts();
+      acc = zeroYear();
     }
   }
 
