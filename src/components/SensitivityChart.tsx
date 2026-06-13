@@ -101,7 +101,7 @@ export function SensitivityChart({ inputs, monthlyRent }: { inputs: CalcInputs; 
       aria-label={`Tornado chart: how far the breakeven rent moves as each assumption varies. Widest mover is ${rows[0]?.label}. The dashed line is your rent of ${usd(monthlyRent)}; bars crossing it could flip the rent-versus-buy verdict.`}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
+        <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
           <CartesianGrid horizontal={false} stroke="var(--color-line)" />
           <XAxis
             type="number"
@@ -125,9 +125,11 @@ export function SensitivityChart({ inputs, monthlyRent }: { inputs: CalcInputs; 
           <ReferenceLine x={monthlyRent} stroke="var(--color-rent)" strokeWidth={2} strokeDasharray="6 4">
             <Label value={`your rent ${usd(monthlyRent)}`} position="top" fontSize={11} fill="var(--color-rent-text)" />
           </ReferenceLine>
-          <Bar dataKey="range" radius={4} isAnimationActive={false}>
+          {/* minPointSize keeps a near-zero swing (e.g. inflation) visible as a small nub
+              that reads "negligible" instead of vanishing into a 1px sliver. */}
+          <Bar dataKey="range" radius={4} minPointSize={3} isAnimationActive={false}>
             {rows.map((r) => (
-              <Cell key={r.label} fill={r.flips ? FLIP_COLOR : "var(--color-muted)"} fillOpacity={r.flips ? 1 : 0.3} />
+              <Cell key={r.label} fill={r.flips ? FLIP_COLOR : "var(--color-muted)"} fillOpacity={r.flips ? 1 : 0.4} />
             ))}
           </Bar>
         </BarChart>
