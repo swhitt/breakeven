@@ -1,10 +1,10 @@
 /**
  * Rent-vs-buy engine.
  *
- * Model follows the NYT "Is It Better to Rent or Buy?" four-bucket approach
- * (initial costs, recurring costs, opportunity costs, net sale proceeds),
- * grounded in the user-cost-of-homeownership literature (Himmelberg, Mayer &
- * Sinai 2005). Every cash flow is discounted at the investment-return rate,
+ * Model uses a four-bucket cost decomposition (initial costs, recurring costs,
+ * opportunity costs, net sale proceeds), grounded in the user-cost-of-
+ * homeownership literature (Himmelberg, Mayer & Sinai 2005). Every cash flow is
+ * discounted at the investment-return rate,
  * which IS the opportunity cost of capital, then we solve for the monthly rent
  * at which buying and renting break even.
  *

@@ -18,6 +18,7 @@ const DATA_DIR = join(__dirname, "..", "src", "data");
 const MARKET_PATH = join(DATA_DIR, "market.json");
 const LOCATIONS_PATH = join(DATA_DIR, "locations.json");
 const PROPERTY_TAX_PATH = join(DATA_DIR, "propertyTax.json");
+const HISTORY_PATH = join(DATA_DIR, "history.json");
 
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "buyorwhatever-data-fetch/1.0 (+https://github.com/)";
@@ -591,6 +592,36 @@ function cleanLocation(item) {
 }
 
 // ---------------------------------------------------------------------------
+// Historical record: append one dated national snapshot per sync so we build a
+// time series over time (deduped by date, so same-day re-runs overwrite). CI
+// commits this back to the repo, so it accumulates across scheduled runs.
+// ---------------------------------------------------------------------------
+async function saveHistory(market, summary) {
+  try {
+    const history = await readJsonOr(HISTORY_PATH, []);
+    const list = Array.isArray(history) ? history : [];
+    const date = market.asOf;
+    const entry = {
+      date,
+      mortgage30: market.mortgage.rate30 ?? null,
+      mortgage15: market.mortgage.rate15 ?? null,
+      inflation: market.inflation.rate ?? null,
+      homeValue: market.national.homeValue ?? null,
+      rent: market.national.rent ?? null,
+      appreciation1yr: market.appreciation.rate1yr ?? null,
+      appreciation5yr: market.appreciation.rate5yrCagr ?? null,
+    };
+    const merged = list.filter((h) => h && h.date !== date);
+    merged.push(entry);
+    merged.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    await writeFile(HISTORY_PATH, JSON.stringify(merged, null, 2) + "\n");
+    summary.push(`history: ${merged.length} dated snapshots (latest ${date})`);
+  } catch (err) {
+    console.warn(`[warn] history save failed: ${err.message}; continuing`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
@@ -625,6 +656,7 @@ async function main() {
   await writeFile(MARKET_PATH, JSON.stringify(newMarket, null, 2) + "\n");
   await writeFile(LOCATIONS_PATH, JSON.stringify(zillow.locations, null, 2) + "\n");
   await writeFile(PROPERTY_TAX_PATH, JSON.stringify(PROPERTY_TAX, null, 2) + "\n");
+  await saveHistory(newMarket, summary);
 
   console.log("\n=== fetch-data summary ===");
   for (const line of summary) console.log("  " + line);

@@ -1,0 +1,12 @@
+[
+  {
+    "date": "2026-06-13",
+    "mortgage30": 0.0652,
+    "mortgage15": 0.0584,
+    "inflation": 0.0425,
+    "homeValue": 368198,
+    "rent": 1930,
+    "appreciation1yr": 0.0061,
+    "appreciation5yr": 0.0502
+  }
+]

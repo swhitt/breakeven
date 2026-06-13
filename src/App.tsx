@@ -94,7 +94,7 @@ function Header() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-baseline gap-2">
           <span className="text-lg font-extrabold tracking-tight">buyorwhatever</span>
-          <span className="hidden text-sm text-muted sm:inline">rent vs. buy, without the spin</span>
+          <span className="hidden text-sm text-muted sm:inline">rent vs. buy, with the math shown</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
           <span className="hidden sm:inline">
@@ -268,8 +268,9 @@ function Sources() {
         <p>
           The model converts every cost of owning (mortgage interest and principal, taxes, maintenance, insurance,
           PMI, closing and selling costs, lost investment returns) into a single breakeven monthly rent, discounting
-          all future cash flow at your investment-return rate. It mirrors the NYT "Is It Better to Rent or Buy?"
-          four-bucket approach and the academic user-cost-of-homeownership literature.
+          all future cash flow at your investment-return rate. It uses a transparent four-bucket cost decomposition
+          (initial costs, recurring costs, opportunity costs, and net sale proceeds), grounded in the academic
+          user-cost-of-homeownership literature.
         </p>
         <p>
           Honest caveats: the SALT cap, standard deduction, and capital-gains brackets are simplified and change with
