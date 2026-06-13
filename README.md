@@ -1,6 +1,6 @@
 # Breakeven
 
-A free, open rent-vs-buy calculator that shows its work. Live mortgage rates, home prices, and rents are baked in fresh, the model is fully transparent and auditable, and there's no lead-gen.
+A rent-vs-buy calculator with live mortgage rates, home prices, and rents baked into a static site, and a year-by-year breakdown of every cost. The model lives in the repo. No accounts, no ads, no lead-gen.
 
 ## What it does
 
@@ -10,7 +10,7 @@ Every cost of owning (mortgage interest and principal, property tax, maintenance
 
 ## The model
 
-It uses a transparent four-bucket cost decomposition (initial costs, recurring costs, opportunity costs, net sale proceeds), grounded in the user-cost-of-homeownership literature (Himmelberg, Mayer & Sinai, 2005). The engine is a pure, unit-tested module in [`src/engine/calculator.ts`](src/engine/calculator.ts). The simulation runs monthly for accurate amortization, PMI drop-off, and compounding.
+It uses a four-bucket cost decomposition (initial costs, recurring costs, opportunity costs, net sale proceeds), grounded in the user-cost-of-homeownership literature (Himmelberg, Mayer & Sinai, 2005). The engine is a pure, unit-tested module in [`src/engine/calculator.ts`](src/engine/calculator.ts). The simulation runs monthly for accurate amortization, PMI drop-off, and compounding.
 
 Outputs:
 

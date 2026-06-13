@@ -488,12 +488,12 @@ function Sources() {
         <p>
           The model converts every cost of owning (mortgage interest and principal, taxes, maintenance, insurance,
           PMI, closing and selling costs, lost investment returns) into a single breakeven monthly rent, discounting
-          all future cash flow at your investment-return rate. It uses a transparent four-bucket cost decomposition
+          all future cash flow at your investment-return rate. It uses a four-bucket cost decomposition
           (initial costs, recurring costs, opportunity costs, and net sale proceeds), grounded in the academic
           user-cost-of-homeownership literature.
         </p>
         <p>
-          Honest caveats: the SALT cap, standard deduction, and capital-gains brackets are simplified and change with
+          Caveats: the SALT cap, standard deduction, and capital-gains brackets are simplified and change with
           tax law, so treat the deduction math as an estimate. Appreciation defaults to a conservative long-run figure
           rather than recent local run-ups. The rent figure is Zillow ZORI, which tracks asking rents on newly-listed
           units and runs ahead of what a tenant renewing in place pays, so in a hot market the default may be high.

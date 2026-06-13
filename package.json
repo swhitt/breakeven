@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "An honest rent-vs-buy calculator that shows its work. Live data, no spin.",
+  "description": "Rent-vs-buy calculator with live data and a year-by-year breakdown of the math.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
