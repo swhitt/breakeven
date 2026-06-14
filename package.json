@@ -13,7 +13,7 @@
     "fetch-data": "node scripts/fetch-data.mjs",
     "fetch-zips": "node scripts/fetch-zips.mjs",
     "render-zip-og": "vite-node scripts/render-zip-og.tsx",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit --force"
   },
   "dependencies": {
     "@vercel/blob": "^2.4.0",
