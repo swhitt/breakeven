@@ -212,3 +212,28 @@ describe("input sanitization", () => {
     expect(allFinite(r)).toBe(true);
   });
 });
+
+describe("net worth (buy vs rent)", () => {
+  it("the net-worth winner at the horizon matches the verdict", () => {
+    const r = calculate(base);
+    const last = r.years[r.years.length - 1];
+    if (r.verdict === "buy") expect(last.buyerNetWorth).toBeGreaterThan(last.renterNetWorth);
+    else expect(last.renterNetWorth).toBeGreaterThan(last.buyerNetWorth);
+  });
+
+  it("the wealth crossover sign-flips exactly at the breakeven year", () => {
+    const r = calculate({ ...base, yearsToStay: 30 });
+    expect(r.breakevenYear).not.toBeNull();
+    const be = r.years.find((y) => y.year === r.breakevenYear)!;
+    const prev = r.years.find((y) => y.year === r.breakevenYear! - 1);
+    expect(be.buyerNetWorth).toBeGreaterThanOrEqual(be.renterNetWorth); // buyer has caught up
+    if (prev) expect(prev.renterNetWorth).toBeGreaterThan(prev.buyerNetWorth); // renter was ahead before
+  });
+
+  it("seeds the renter's portfolio with the buyer's upfront (renting is not pure consumption)", () => {
+    const r = calculate(base);
+    // The renter invested ~down payment + closing ($80k + $12k) instead of buying; a year in
+    // it is a real six-figure-ish asset, not zero.
+    expect(r.years[0].renterNetWorth).toBeGreaterThan(80000);
+  });
+});

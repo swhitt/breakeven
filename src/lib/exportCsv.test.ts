@@ -34,7 +34,7 @@ describe("buildBreakdownCsv", () => {
     const lines = csv.replace(/^﻿/, "").split("\r\n").filter(Boolean);
     const headerIdx = lines.findIndex((l) => l.startsWith("Year,"));
     expect(headerIdx).toBeGreaterThan(0); // metadata block precedes it
-    expect(lines[headerIdx].split(",").length).toBe(28);
+    expect(lines[headerIdx].split(",").length).toBe(31);
 
     const dataRows = lines.slice(headerIdx + 1);
     // one row per simulated year + the TOTALS row

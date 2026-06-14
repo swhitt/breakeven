@@ -113,6 +113,12 @@ function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
         )}
         <Line label="Rent paid this year" value={y.rentPaid} />
       </Group>
+
+      <Group title="Net worth if you exit now">
+        <Line label="Buyer (equity after selling)" value={y.buyerNetWorth} good />
+        <Line label="Renter (invested difference)" value={y.renterNetWorth} good />
+        <Line label="Buy minus rent" value={y.buyerNetWorth - y.renterNetWorth} signed strong />
+      </Group>
     </div>
   );
 }
@@ -146,6 +152,7 @@ export function Breakdown({
   const totalRent = years.reduce((s, y) => s + y.rentPaid, 0);
   const last = years[years.length - 1];
   const lastPv = last ? pvByYear.get(last.year) : undefined;
+  const nwDiff = last ? last.buyerNetWorth - last.renterNetWorth : 0;
 
   function download() {
     triggerCsvDownload({
@@ -175,6 +182,33 @@ export function Breakdown({
           Download CSV
         </button>
       </div>
+
+      {last && (
+        <div className="mb-4 rounded-xl border border-line bg-paper px-4 py-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-muted">
+            Net worth after {last.year} {last.year === 1 ? "year" : "years"}, if you sell and move out
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-muted">Buying (home equity, after selling)</span>
+              <span className="tnum font-bold text-ink">{usd(last.buyerNetWorth)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-muted">Renting + investing the difference</span>
+              <span className="tnum font-bold text-ink">{usd(last.renterNetWorth)}</span>
+            </div>
+          </div>
+          <p className={"mt-2 text-sm font-medium " + (nwDiff >= 0 ? "text-buy-text" : "text-rent-text")}>
+            {nwDiff >= 0
+              ? `Buying leaves you about ${usd(nwDiff)} wealthier.`
+              : `Renting and investing the difference leaves you about ${usd(-nwDiff)} wealthier.`}{" "}
+            <span className="font-normal text-muted">
+              The renter's portfolio is the down payment plus closing the buyer sank into the home, plus each year's
+              cash-flow difference, compounded at your investment return.
+            </span>
+          </p>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="tnum w-full min-w-[680px] border-collapse text-right text-sm">

@@ -47,6 +47,9 @@ const HEADERS = [
   "Buy Net Cost (PV todays $)",
   "Rent Net Cost (PV todays $)",
   "Buy - Rent (PV todays $)",
+  "Buyer Net Worth ($)",
+  "Renter Net Worth ($)",
+  "Net Worth Buy - Rent ($)",
 ];
 
 // RFC 4180 quote: wrap and double internal quotes. Used for the metadata block (free text +
@@ -169,6 +172,9 @@ export function buildBreakdownCsv(ctx: CsvContext): string {
         n2(buyPV),
         n2(rentPV),
         n2(buyPV - rentPV),
+        n2(y.buyerNetWorth),
+        n2(y.renterNetWorth),
+        n2(y.buyerNetWorth - y.renterNetWorth),
       ].join(","),
     );
   }
@@ -205,6 +211,9 @@ export function buildBreakdownCsv(ctx: CsvContext): string {
       n2(result.buyNetCost),
       n2(result.rentNetCost),
       n2(result.buyNetCost - result.rentNetCost),
+      "",
+      "",
+      "",
     ].join(","),
   );
 

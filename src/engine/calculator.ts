@@ -194,6 +194,14 @@ export interface YearRow {
   equity: number;
   // rent
   rentPaid: number;
+  // Wealth, if you exited at the end of this year. buyerNetWorth is the home sale's net
+  // proceeds (value, less selling costs, loan payoff, and capital-gains tax). renterNetWorth
+  // is the "invest the difference" portfolio: the down payment + closing the buyer sank into
+  // the house, plus every month of cash-flow difference, compounded at the investment return.
+  // Both are filled by calculate() (simulateBuy alone doesn't know the rent side); they cross
+  // in the exact year the cumulative-cost lines cross, by construction.
+  buyerNetWorth: number;
+  renterNetWorth: number;
 }
 
 export interface HorizonPoint {
@@ -367,6 +375,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
           loanBalance: balance,
           equity: homeValue - balance,
           rentPaid: 0, // placeholder, filled by calculate()
+          buyerNetWorth: 0, // placeholders, filled by calculate() (need the rent side + horizon)
+          renterNetWorth: 0,
         });
       }
       acc = zeroYear();
@@ -432,17 +442,8 @@ export function calculate(rawInp: CalcInputs): CalcResult {
   const rentNetCost = simulateRent(inp, horizon, inp.monthlyRent);
   const breakevenRent = breakevenRentAt(inp, horizon, buy.pvCost);
 
-  // Fill rentPaid into the breakdown rows.
-  const years = buy.years.map((r) => {
-    let rentPaid = 0;
-    for (let m = (r.year - 1) * 12 + 1; m <= r.year * 12; m++) {
-      const yearIdx = Math.floor((m - 1) / 12);
-      rentPaid += inp.monthlyRent * Math.pow(1 + inp.rentGrowth, yearIdx);
-    }
-    return { ...r, rentPaid };
-  });
-
-  // Horizon sweep for the chart + breakeven year (when does buying overtake renting?).
+  // Horizon sweep for the chart, the breakeven year, and the per-year cumulative PV the net
+  // worth derives from. (When does buying overtake renting?)
   const maxYears = Math.max(horizon, inp.mortgageTermYears, 30);
   const points: HorizonPoint[] = [];
   let breakevenYear: number | null = null;
@@ -452,6 +453,29 @@ export function calculate(rawInp: CalcInputs): CalcResult {
     points.push({ year: y, buyNetCost: b, rentNetCost: r });
     if (breakevenYear === null && b <= r) breakevenYear = y;
   }
+
+  // Fill rentPaid + the net-worth pair into the breakdown rows.
+  const disc = inp.investmentReturn / 12;
+  const closing = inp.homePrice * inp.buyingClosingPct;
+  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  const years = buy.years.map((r) => {
+    let rentPaid = 0;
+    for (let m = (r.year - 1) * 12 + 1; m <= r.year * 12; m++) {
+      const yearIdx = Math.floor((m - 1) / 12);
+      rentPaid += inp.monthlyRent * Math.pow(1 + inp.rentGrowth, yearIdx);
+    }
+    // Buyer's wealth if sold now: net sale proceeds (mirrors the horizon sale math).
+    const sellingCosts = r.homeValue * inp.sellingCostPct;
+    const gain = r.homeValue - sellingCosts - inp.homePrice - closing;
+    const capGainsTax = inp.capitalGainsRate * Math.max(0, gain - exclusion);
+    const buyerNetWorth = r.homeValue - sellingCosts - r.loanBalance - capGainsTax;
+    // Renter's "invest the difference" portfolio. Derived from the cumulative PV edge so it is
+    // exactly consistent with the verdict: it equals buyer net worth plus the future value of
+    // buying's PV cost advantage, and the two cross in the same year the cost lines cross.
+    const pt = points[r.year - 1];
+    const renterNetWorth = buyerNetWorth + (pt.buyNetCost - pt.rentNetCost) * Math.pow(1 + disc, r.year * 12);
+    return { ...r, rentPaid, buyerNetWorth, renterNetWorth };
+  });
 
   const verdict: "buy" | "rent" = inp.monthlyRent <= breakevenRent ? "rent" : "buy";
 
