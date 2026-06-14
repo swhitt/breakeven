@@ -11,6 +11,7 @@ import { Breakdown } from "./components/Breakdown";
 import { Derivation } from "./components/Derivation";
 import { Disclosure } from "./ui";
 import { yearsLabel, pct, usd } from "./lib/format";
+import { freshness } from "./lib/freshness";
 import { decodeShare, encodeShare } from "./lib/share";
 import { computeSensitivity, drivingFactor } from "./lib/sensitivity";
 import {
@@ -737,6 +738,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
 }
 
 function Header({ market }: { market: MarketData }) {
+  // The refresh cron can silently stall (its push is continue-on-error), so age the badge
+  // out instead of labeling week-old numbers "fresh", and show it on mobile too.
+  const fresh = freshness(market.asOf, new Date());
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -758,9 +762,27 @@ function Header({ market }: { market: MarketData }) {
           <span className="hidden text-sm text-muted sm:inline">rent vs. buy, with the math shown</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
-          <span className="hidden sm:inline">
-            data fresh as of <span className="font-semibold text-ink">{market.asOf}</span>
-          </span>
+          {fresh.stale ? (
+            <span
+              className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"
+              title={`Live data last refreshed ${fresh.asOf}. The weekly sync may have stalled, so these numbers could be out of date.`}
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5">
+                <path
+                  fillRule="evenodd"
+                  d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 7.5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 0110 7.5zm0 6.5a1 1 0 100-2 1 1 0 000 2z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span className="hidden sm:inline">data may be stale, as of {fresh.asOf}</span>
+              <span className="sm:hidden">stale · {fresh.asOf}</span>
+            </span>
+          ) : (
+            <span>
+              data <span className="hidden sm:inline">fresh as of </span>
+              <span className="font-semibold text-ink">{fresh.asOf}</span>
+            </span>
+          )}
           <a
             href="https://github.com/swhitt/breakeven"
             className="font-semibold text-ink underline-offset-2 hover:underline"
