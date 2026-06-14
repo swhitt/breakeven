@@ -678,7 +678,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
         {/* Full-width so the wide tables have room to breathe. */}
         <div className="mt-6 space-y-3">
           <Disclosure summary="How your rates are derived">
-            <Derivation inputs={inputs} result={result} market={market} selected={selected} />
+            <Derivation inputs={inputs} result={result} market={market} selected={selected} activeZip={activeZip} />
           </Disclosure>
           <Disclosure summary="Year-by-year breakdown">
             <Breakdown years={result.years} />

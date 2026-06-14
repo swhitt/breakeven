@@ -5,6 +5,7 @@ import { FEDERAL_BRACKETS, STATE_TAX, bracketTax, estimateMarginalRate, type Bra
 import { MORTGAGE_INTEREST_DEBT_CAP } from "../engine/taxConstants";
 import type { LocationData, MarketData } from "../data/types";
 import { pct, usd } from "../lib/format";
+import type { ActiveZip } from "./LocationPicker";
 
 // Rate like 4.4% / 22% / 2.75% with no trailing-zero noise.
 const rateLabel = (r: number) => `${+(r * 100).toFixed(2)}%`;
@@ -67,12 +68,18 @@ export function Derivation({
   result,
   market,
   selected,
+  activeZip,
 }: {
   inputs: AppInputs;
   result: CalcResult;
   market: MarketData;
   selected: LocationData;
+  activeZip: ActiveZip | null;
 }) {
+  // A ZIP refinement sources its numbers from that ZIP, not the metro it sits in, so the
+  // "live data" table must credit the ZIP (and its state) rather than the selected metro.
+  const place = activeZip ? `ZIP ${activeZip.zip} (${activeZip.city}, ${activeZip.state})` : selected.metro;
+  const placeState = activeZip ? activeZip.state : selected.state;
   const status = inputs.filingJointly ? "joint" : "single";
   const taxable = Math.max(0, inputs.annualIncome - inputs.standardDeduction);
   const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
@@ -188,12 +195,12 @@ export function Derivation({
               <Row
                 label="Home price"
                 value={usd(inputs.homePrice)}
-                source={`Zillow ZHVI · ${selected.metro} · ${market.national.asOf}`}
+                source={`Zillow ZHVI · ${place} · ${market.national.asOf}`}
               />
               <Row
                 label="Comparable rent"
                 value={`${usd(inputs.monthlyRent)}/mo`}
-                source={`Zillow ZORI · ${selected.metro} · ${market.national.asOf}`}
+                source={`Zillow ZORI · ${place} · ${market.national.asOf}`}
               />
               <Row
                 label={`Mortgage rate (${inputs.mortgageTermYears}yr)`}
@@ -208,7 +215,7 @@ export function Derivation({
                     ? `${usd(inputs.propertyTax.annual)}/yr`
                     : `${pct(inputs.propertyTax.rate, 2)} of value`
                 }
-                source={`${selected.state} avg · WalletHub / Census ACS 2024`}
+                source={`${placeState} avg · WalletHub / Census ACS 2024`}
               />
               <Row
                 label="Home insurance"
@@ -217,13 +224,13 @@ export function Derivation({
                     ? `${usd(inputs.homeInsurance.annual)}/yr`
                     : `${pct(inputs.homeInsurance.rate, 2)} of value`
                 }
-                source={`${selected.state} avg · NAIC HO-3 / Zillow ZHVI`}
+                source={`${placeState} avg · NAIC HO-3 / Zillow ZHVI`}
               />
               <Row
                 label="Appreciation"
                 value={pct(inputs.homeAppreciation, 1)}
                 source={
-                  selected.appreciation5yr != null
+                  !activeZip && selected.appreciation5yr != null
                     ? `Long-run default · ${selected.metro} ran ${pct(selected.appreciation5yr, 1)}/yr last 5yr`
                     : "Long-run default (conservative)"
                 }
