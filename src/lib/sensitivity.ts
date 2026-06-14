@@ -1,4 +1,4 @@
-import { calculate, type CalcInputs } from "../engine/calculator";
+import { breakevenRentOnly, type CalcInputs } from "../engine/calculator";
 import { pct } from "./format";
 
 // Each factor sweeps one uncertain input across a plausible band, holding the rest at
@@ -41,14 +41,14 @@ export function buildFactors(inp: CalcInputs): Factor[] {
   ];
 }
 
-/** Sweep every factor and sort widest-swing first (the tornado shape). calculate() is
- *  pure, but this runs it ~12 times, so callers should keep it off the input hot path. */
+/** Sweep every factor and sort widest-swing first (the tornado shape). breakevenRentOnly()
+ *  is pure, but this runs it ~12 times, so callers should keep it off the input hot path. */
 export function computeSensitivity(inputs: CalcInputs): SensitivityRow[] {
   const monthlyRent = inputs.monthlyRent;
   return buildFactors(inputs)
     .map((factor) => {
-      const loBreakeven = calculate({ ...inputs, [factor.key]: factor.lo }).breakevenRent;
-      const hiBreakeven = calculate({ ...inputs, [factor.key]: factor.hi }).breakevenRent;
+      const loBreakeven = breakevenRentOnly({ ...inputs, [factor.key]: factor.lo });
+      const hiBreakeven = breakevenRentOnly({ ...inputs, [factor.key]: factor.hi });
       const lo = Math.min(loBreakeven, hiBreakeven);
       const hi = Math.max(loBreakeven, hiBreakeven);
       return {

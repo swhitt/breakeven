@@ -1,7 +1,9 @@
-import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { memo } from "react";
+import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { grossOwningCost, RECURRING_COSTS, type CostKey, type YearRow } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 import { niceTicks } from "../lib/ticks";
+import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
 
 // Colors for the registry carrying costs. This chart is entirely the BUYING side,
 // so orange (= buy) reading as interest is fine, but teal (= rent in the other
@@ -59,7 +61,7 @@ function CompositionTooltip({
   const cashOut = grossOwningCost(y);
   const netCash = cashOut - y.taxBenefit;
   return (
-    <div className="rounded-xl border border-line bg-surface px-3 py-2 text-[13px] shadow-lg">
+    <TooltipCard>
       <div className="mb-1 text-muted">Year {y.year}</div>
       {items.map((it) => {
         const v = it.get(y);
@@ -95,7 +97,7 @@ function CompositionTooltip({
           {usd(y.principalPaid)}
         </span>
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
@@ -104,7 +106,7 @@ function CompositionTooltip({
  * principal (equity) sits on top to separate "money gone" from "money saved";
  * the tax benefit hangs below zero as a credit you net back.
  */
-export function CostCompositionChart({ years }: { years: YearRow[] }) {
+export const CostCompositionChart = memo(function CostCompositionChart({ years }: { years: YearRow[] }) {
   // Keep only stack items that ever carry a value, so PMI/HOA vanish when irrelevant.
   const items = STACK.filter((it) => years.some((y) => it.get(y) > 0));
   const showCredit = years.some((y) => y.taxBenefit > 0);
@@ -130,60 +132,59 @@ export function CostCompositionChart({ years }: { years: YearRow[] }) {
     ...(showCredit ? [{ label: "Tax benefit", color: CREDIT_COLOR }] : []),
   ];
 
+  const single = years.length === 1;
+  const ariaLabel = single
+    ? `Where a single year's home payment goes, broken into ${items.map((it) => it.label).join(", ")}${showCredit ? ", less the federal tax benefit" : ""}.`
+    : `Where each year's home payment goes, broken into ${items.map((it) => it.label).join(", ")}${showCredit ? ", less the federal tax benefit" : ""}, over ${years.length} years. Interest is largest early and shrinks as principal grows.`;
+
   return (
     <>
-      <div
-        className="h-72 w-full sm:h-80"
-        role="img"
-        aria-label={`Where each year's home payment goes, broken into ${items.map((it) => it.label).join(", ")}${showCredit ? ", less the federal tax benefit" : ""}, over ${years.length} years. Interest is largest early and shrinks as principal grows.`}
-      >
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={rows}
-            margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
-            barCategoryGap="18%"
-            stackOffset="sign"
-            accessibilityLayer
-          >
-            <CartesianGrid stroke="var(--color-line)" vertical={false} />
-            <XAxis
-              dataKey="year"
-              ticks={ticks}
-              tickLine={false}
-              axisLine={{ stroke: "var(--color-line)" }}
-              tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-              tickFormatter={(y) => `${y}y`}
+      <ChartFrame ariaLabel={ariaLabel}>
+        <BarChart
+          data={rows}
+          margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+          barCategoryGap="18%"
+          stackOffset="sign"
+          accessibilityLayer
+        >
+          <CartesianGrid stroke="var(--color-line)" vertical={false} />
+          <XAxis
+            dataKey="year"
+            ticks={ticks}
+            tickLine={false}
+            axisLine={{ stroke: "var(--color-line)" }}
+            tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+            tickFormatter={(y) => `${y}y`}
+          />
+          <YAxis
+            domain={[minTotal, maxTotal]}
+            ticks={yTicks}
+            tickLine={false}
+            axisLine={false}
+            width={48}
+            tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+            tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
+          />
+          <Tooltip
+            cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }}
+            content={<CompositionTooltip items={items} showCredit={showCredit} />}
+          />
+          {showCredit && <ReferenceLine y={0} stroke="var(--color-muted)" strokeWidth={1} />}
+          {items.map((it, i) => (
+            <Bar
+              key={it.key}
+              dataKey={it.key}
+              stackId="c"
+              fill={it.color}
+              isAnimationActive={false}
+              radius={i === items.length - 1 ? [3, 3, 0, 0] : undefined}
             />
-            <YAxis
-              domain={[minTotal, maxTotal]}
-              ticks={yTicks}
-              tickLine={false}
-              axisLine={false}
-              width={48}
-              tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-              tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
-            />
-            <Tooltip
-              cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }}
-              content={<CompositionTooltip items={items} showCredit={showCredit} />}
-            />
-            {showCredit && <ReferenceLine y={0} stroke="var(--color-muted)" strokeWidth={1} />}
-            {items.map((it, i) => (
-              <Bar
-                key={it.key}
-                dataKey={it.key}
-                stackId="c"
-                fill={it.color}
-                isAnimationActive={false}
-                radius={i === items.length - 1 ? [3, 3, 0, 0] : undefined}
-              />
-            ))}
-            {showCredit && (
-              <Bar dataKey="taxCredit" stackId="c" fill={CREDIT_COLOR} isAnimationActive={false} radius={[0, 0, 3, 3]} />
-            )}
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+          ))}
+          {showCredit && (
+            <Bar dataKey="taxCredit" stackId="c" fill={CREDIT_COLOR} isAnimationActive={false} radius={[0, 0, 3, 3]} />
+          )}
+        </BarChart>
+      </ChartFrame>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
         {legendItems.map((it) => (
           <span key={it.label} className="flex items-center gap-1.5">
@@ -194,4 +195,4 @@ export function CostCompositionChart({ years }: { years: YearRow[] }) {
       </div>
     </>
   );
-}
+});

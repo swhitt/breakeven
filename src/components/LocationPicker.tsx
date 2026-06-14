@@ -42,7 +42,11 @@ export function LocationPicker({
     return locations.filter((l) => l.metro.toLowerCase().includes(q)).slice(0, 60);
   }, [locations, query]);
 
-  // Resolve a 5-digit query against the lazy zip table (cancelling stale lookups).
+  // A resolved ZIP is the first selectable option (index -1); metros run 0..n-1.
+  const hasZipOption = !!zipHit?.data;
+
+  // Resolve a 5-digit query against the lazy zip table (cancelling stale lookups). A resolved
+  // ZIP becomes the highlighted option (-1) so a "type a ZIP, hit Enter" flow selects it.
   useEffect(() => {
     const q = query.trim();
     if (!/^\d{5}$/.test(q)) {
@@ -53,7 +57,9 @@ export function LocationPicker({
     setZipHit({ zip: q, data: null, loading: true });
     lookupZip(q)
       .then((data) => {
-        if (!cancelled) setZipHit({ zip: q, data, loading: false });
+        if (cancelled) return;
+        setZipHit({ zip: q, data, loading: false });
+        if (data) setActive(-1);
       })
       .catch(() => {
         if (!cancelled) setZipHit({ zip: q, data: null, loading: false });
@@ -154,7 +160,13 @@ export function LocationPicker({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-label="Search metros or enter a ZIP"
-            aria-activedescendant={!zipHit && results[active] ? `${listId}-opt-${active}` : undefined}
+            aria-activedescendant={
+              active === -1 && hasZipOption
+                ? `${listId}-opt-zip`
+                : results[active]
+                  ? `${listId}-opt-${active}`
+                  : undefined
+            }
             placeholder="Search a metro or type a ZIP"
             value={query}
             inputMode="text"
@@ -167,18 +179,18 @@ export function LocationPicker({
                 // Prevent the default so the trailing Enter activation doesn't land on the
                 // trigger (which we refocus on close) and immediately reopen the menu.
                 e.preventDefault();
-                // A resolved ZIP wins; otherwise pick the highlighted metro.
-                if (zipHit?.data) chooseZip(zipHit.zip, zipHit.data);
+                // The ZIP option (index -1) wins when highlighted; otherwise the metro.
+                if (active === -1 && hasZipOption) chooseZip(zipHit!.zip, zipHit!.data!);
                 else if (results[active]) choose(results[active]);
               } else if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setActive((a) => Math.min(a + 1, results.length - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
-                setActive((a) => Math.max(a - 1, 0));
+                setActive((a) => Math.max(a - 1, hasZipOption ? -1 : 0));
               } else if (e.key === "Home") {
                 e.preventDefault();
-                setActive(0);
+                setActive(hasZipOption ? -1 : 0);
               } else if (e.key === "End") {
                 e.preventDefault();
                 setActive(results.length - 1);
@@ -189,38 +201,39 @@ export function LocationPicker({
             className="w-full border-b border-line px-3 py-2.5 text-sm outline-none"
           />
 
-          {/* A complete ZIP shows its own result above the metro list. */}
-          {zipHit && (
-            <div className="border-b border-line">
-              <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">By ZIP</div>
-              {zipHit.loading ? (
-                <div className="flex items-center justify-between px-3 py-2 text-sm text-muted">
-                  <span>ZIP {zipHit.zip}</span>
-                  <span>Looking up…</span>
-                </div>
-              ) : zipHit.data ? (
-                <button
-                  type="button"
-                  onClick={() => chooseZip(zipHit.zip, zipHit.data!)}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-paper"
-                >
-                  <span className="font-medium">
-                    ZIP {zipHit.zip} · {zipHit.data.city}, {zipHit.data.state}
-                  </span>
-                  <span className="tnum text-xs text-muted">
-                    {usd(zipHit.data.homeValue)} · {usd(zipHit.data.rent)}/mo
-                  </span>
-                </button>
-              ) : (
-                <div className="flex items-center justify-between px-3 py-2 text-sm text-muted">
-                  <span>ZIP {zipHit.zip}</span>
-                  <span>No data, try a metro</span>
-                </div>
-              )}
+          {/* ZIP lookup status (looking up / no data) is a live status message, not a
+              selectable option, so it lives in its own polite region outside the listbox. */}
+          {zipHit && !zipHit.data && (
+            <div aria-live="polite" className="border-b border-line px-3 py-2 text-sm text-muted">
+              {zipHit.loading ? `Looking up ZIP ${zipHit.zip}…` : `No data for ZIP ${zipHit.zip}, try a metro.`}
             </div>
           )}
 
-          <ul id={listId} role="listbox" aria-label="Metros" className="max-h-72 overflow-y-auto py-1">
+          <ul id={listId} role="listbox" aria-label="Metros and ZIPs" className="max-h-72 overflow-y-auto py-1">
+            {/* A resolved ZIP is the first real option, so arrowing and aria-activedescendant
+                cover it the same way they cover the metros. */}
+            {hasZipOption && (
+              <li role="option" id={`${listId}-opt-zip`} aria-selected={active === -1}>
+                <button
+                  ref={active === -1 ? activeRef : undefined}
+                  type="button"
+                  tabIndex={-1}
+                  onMouseEnter={() => setActive(-1)}
+                  onClick={() => chooseZip(zipHit!.zip, zipHit!.data!)}
+                  className={
+                    "flex w-full items-center justify-between px-3 py-2 text-left text-sm " +
+                    (active === -1 ? "bg-paper" : "")
+                  }
+                >
+                  <span className="font-medium">
+                    ZIP {zipHit!.zip} · {zipHit!.data!.city}, {zipHit!.data!.state}
+                  </span>
+                  <span className="tnum text-xs text-muted">
+                    {usd(zipHit!.data!.homeValue)} · {usd(zipHit!.data!.rent)}/mo
+                  </span>
+                </button>
+              </li>
+            )}
             {results.map((loc, i) => (
               <li key={loc.id} role="option" aria-selected={i === active}>
                 <button
@@ -242,8 +255,10 @@ export function LocationPicker({
                 </button>
               </li>
             ))}
-            {results.length === 0 && !zipHit && <li className="px-3 py-3 text-sm text-muted">No metros match.</li>}
           </ul>
+          {results.length === 0 && !hasZipOption && !zipHit && (
+            <p className="px-3 py-3 text-sm text-muted">No metros match.</p>
+          )}
         </div>
       )}
     </div>

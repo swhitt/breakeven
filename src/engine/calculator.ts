@@ -18,7 +18,7 @@
  * The simulation is monthly for accuracy (amortization, PMI drop-off, compounding).
  */
 
-import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP } from "./taxConstants";
+import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP, saltCapForYear, TAX_YEAR } from "./taxConstants";
 
 /**
  * How a recurring ownership cost is expressed. A tagged union so only one
@@ -138,12 +138,16 @@ export const RECURRING_COSTS: RecurringCost[] = [
     monthly: (i, c) => i.hoaMonthly * c.inflationFactor,
   },
   {
-    // While LTV (against the original price) is over 80%, charged on the original loan.
+    // PMI runs while loan-to-value is over 80%. The LTV trigger is measured against the
+    // CURRENT (appreciated) value, since servicers cancel as the home gains value, not just
+    // as the loan amortizes. The premium itself is still priced off the original loan, the way
+    // servicers quote it. A flat or declining market won't cancel via appreciation here, only
+    // via principal paydown, which is the conservative real-world behavior.
     key: "pmi",
     label: "PMI",
     side: "buy",
     inHousingPayment: true,
-    monthly: (i, c) => (c.loanBalance / c.homePrice > 0.8 ? (c.originalLoan * i.pmiRate) / 12 : 0),
+    monthly: (i, c) => (c.loanBalance / c.homeValue > 0.8 ? (c.originalLoan * i.pmiRate) / 12 : 0),
   },
 ];
 
@@ -210,6 +214,16 @@ export interface HorizonPoint {
   rentNetCost: number; // PV today's dollars
 }
 
+// Wealth at each horizon year if you sold and moved out then. buyerNetWorth is the home
+// sale's net proceeds; renterNetWorth is the invest-the-difference portfolio. They cross in
+// the exact breakeven year by construction. Spans the FULL horizon (not just the stay), so
+// the net-worth chart can show the crossover even when breakeven is past yearsToStay.
+export interface NetWorthPoint {
+  year: number;
+  buyerNetWorth: number;
+  renterNetWorth: number;
+}
+
 export interface CalcResult {
   breakevenRent: number; // first-year monthly rent that ties buy vs rent at yearsToStay
   verdict: "buy" | "rent";
@@ -220,6 +234,7 @@ export interface CalcResult {
   monthlyPayment: number; // mortgage P&I
   loanAmount: number;
   horizon: HorizonPoint[]; // per-year net cost, both sides, for charting
+  netWorth: NetWorthPoint[]; // per-year wealth, both sides, across the full horizon (chart)
   years: YearRow[]; // per-year breakdown for the "show your work" table
 }
 
@@ -266,6 +281,23 @@ interface BuySim {
   years: YearRow[];
   monthlyPayment: number;
   loanAmount: number;
+  endHomeValue: number; // appreciated value at the sale point
+  endBalance: number; // remaining loan balance at the sale point
+}
+
+/**
+ * Buyer's wealth if they sold today: net sale proceeds after selling costs, loan payoff,
+ * and capital-gains tax (IRC 121 primary-residence exclusion applied). The single source of
+ * truth for "what the buyer walks away with", shared by the headline sale, the breakdown
+ * rows, and the net-worth chart so they can't drift.
+ */
+function buyerNetWorthAt(inp: CalcInputs, homeValue: number, loanBalance: number): number {
+  const closing = inp.homePrice * inp.buyingClosingPct;
+  const sellingCosts = homeValue * inp.sellingCostPct;
+  const gain = homeValue - sellingCosts - inp.homePrice - closing;
+  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  const capGainsTax = inp.capitalGainsRate * Math.max(0, gain - exclusion);
+  return homeValue - sellingCosts - loanBalance - capGainsTax;
 }
 
 /**
@@ -345,17 +377,22 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     // Horizons are always whole years (callers round), so every year is full.
     if (m % 12 === 0) {
       const saltBase = BUY_COSTS.reduce((s, c) => (c.deductibleSALT ? s + acc.costs[c.key] : s), 0);
-      const saltUsed = Math.min(saltBase + inp.otherSALT, inp.saltCap);
+      // SALT cap is time-varying: it follows the OBBBA schedule and drops to the $10k cliff
+      // in 2030, so a horizon that crosses 2030 uses the lower cap in its later years instead
+      // of holding the entry-year value flat (which overstated the long-horizon buyer benefit).
+      const calendarYear = TAX_YEAR + (m / 12 - 1);
+      const saltUsed = Math.min(saltBase + inp.otherSALT, saltCapForYear(calendarYear));
       // PMI is deliberately excluded from itemized deductions. OBBBA restored the
       // mortgage-insurance-premium deduction for 2026+, but it phases out between
       // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
       // rate already implies AGI past the phaseout), so we treat PMI as a pure cost.
-      // ASSUMPTION: standardDeduction, saltCap, and otherSALT are held at their
-      // entry-year nominal value for the whole horizon, while the itemized total
-      // inflates with the home. Real law indexes these, so this slightly overstates
-      // the long-horizon benefit for high-tax itemizers (it's $0, and so unaffected,
-      // for the common standard-deduction-wins case). Held flat on purpose; revisit
-      // if the horizon-tilt matters. The premium is also valued at a single marginal
+      // ASSUMPTION: standardDeduction and otherSALT are held at their entry-year nominal
+      // value for the whole horizon (the SALT cap follows its statutory schedule above),
+      // while the itemized total inflates with the home. Real law indexes the deduction,
+      // so this slightly overstates the long-horizon benefit for high-tax itemizers (it's
+      // $0, and so unaffected, for the common standard-deduction-wins case). The standard
+      // deduction's drift partially offsets the SALT taper, so leaving it flat is a wash;
+      // revisit if the horizon-tilt matters. The premium is also valued at a single marginal
       // rate (a small overstatement when it straddles a bracket).
       const itemized = acc.deductibleInterest + saltUsed;
       const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
@@ -383,19 +420,22 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
     }
   }
 
-  // Sale at the horizon (inflow, discounted).
+  // Sale at the horizon (inflow, discounted). Net proceeds are the buyer's wealth at the
+  // sale point, so the shared helper computes them (basis = purchase price + buying closing,
+  // symmetric with selling costs, with the IRC 121 exclusion applied inside).
   const saleValue = inp.homePrice * Math.pow(1 + inp.homeAppreciation, horizonYears);
-  const sellingCosts = saleValue * inp.sellingCostPct;
-  // Basis = purchase price + buying closing costs (symmetric with selling costs).
-  const gain = saleValue - sellingCosts - inp.homePrice - closing;
-  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
-  const taxableGain = Math.max(0, gain - exclusion);
-  const capGainsTax = inp.capitalGainsRate * taxableGain;
-  const netProceeds = saleValue - sellingCosts - balance - capGainsTax;
+  const netProceeds = buyerNetWorthAt(inp, saleValue, balance);
   const saleDf = Math.pow(1 + disc, months);
   pv -= netProceeds / saleDf;
 
-  return { pvCost: pv, years: rows, monthlyPayment: payment, loanAmount: loan };
+  return {
+    pvCost: pv,
+    years: rows,
+    monthlyPayment: payment,
+    loanAmount: loan,
+    endHomeValue: saleValue,
+    endBalance: balance,
+  };
 }
 
 /**
@@ -442,36 +482,36 @@ export function calculate(rawInp: CalcInputs): CalcResult {
   const rentNetCost = simulateRent(inp, horizon, inp.monthlyRent);
   const breakevenRent = breakevenRentAt(inp, horizon, buy.pvCost);
 
-  // Horizon sweep for the chart, the breakeven year, and the per-year cumulative PV the net
-  // worth derives from. (When does buying overtake renting?)
+  // Horizon sweep for the charts, the breakeven year, and the per-year cumulative PV the net
+  // worth derives from. (When does buying overtake renting?) Net worth is built here too, so
+  // the wealth chart spans the full horizon, not just the stay.
+  const disc = inp.investmentReturn / 12;
   const maxYears = Math.max(horizon, inp.mortgageTermYears, 30);
   const points: HorizonPoint[] = [];
+  const netWorth: NetWorthPoint[] = [];
   let breakevenYear: number | null = null;
   for (let y = 1; y <= maxYears; y++) {
-    const b = simulateBuy(inp, y, false).pvCost;
+    const sim = simulateBuy(inp, y, false);
     const r = simulateRent(inp, y, inp.monthlyRent);
-    points.push({ year: y, buyNetCost: b, rentNetCost: r });
-    if (breakevenYear === null && b <= r) breakevenYear = y;
+    points.push({ year: y, buyNetCost: sim.pvCost, rentNetCost: r });
+    // Buyer wealth = net sale proceeds at year y. Renter wealth = that plus the future value
+    // of buying's PV cost advantage, so the two cross in the exact breakeven year (same
+    // identity as the per-row fill below, just across every horizon year).
+    const buyerNetWorth = buyerNetWorthAt(inp, sim.endHomeValue, sim.endBalance);
+    const renterNetWorth = buyerNetWorth + (sim.pvCost - r) * Math.pow(1 + disc, y * 12);
+    netWorth.push({ year: y, buyerNetWorth, renterNetWorth });
+    if (breakevenYear === null && sim.pvCost <= r) breakevenYear = y;
   }
 
-  // Fill rentPaid + the net-worth pair into the breakdown rows.
-  const disc = inp.investmentReturn / 12;
-  const closing = inp.homePrice * inp.buyingClosingPct;
-  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  // Fill rentPaid + the net-worth pair into the breakdown rows (the chart reads result.netWorth
+  // above; these rows feed the table + CSV, which only span the stay).
   const years = buy.years.map((r) => {
     let rentPaid = 0;
     for (let m = (r.year - 1) * 12 + 1; m <= r.year * 12; m++) {
       const yearIdx = Math.floor((m - 1) / 12);
       rentPaid += inp.monthlyRent * Math.pow(1 + inp.rentGrowth, yearIdx);
     }
-    // Buyer's wealth if sold now: net sale proceeds (mirrors the horizon sale math).
-    const sellingCosts = r.homeValue * inp.sellingCostPct;
-    const gain = r.homeValue - sellingCosts - inp.homePrice - closing;
-    const capGainsTax = inp.capitalGainsRate * Math.max(0, gain - exclusion);
-    const buyerNetWorth = r.homeValue - sellingCosts - r.loanBalance - capGainsTax;
-    // Renter's "invest the difference" portfolio. Derived from the cumulative PV edge so it is
-    // exactly consistent with the verdict: it equals buyer net worth plus the future value of
-    // buying's PV cost advantage, and the two cross in the same year the cost lines cross.
+    const buyerNetWorth = buyerNetWorthAt(inp, r.homeValue, r.loanBalance);
     const pt = points[r.year - 1];
     const renterNetWorth = buyerNetWorth + (pt.buyNetCost - pt.rentNetCost) * Math.pow(1 + disc, r.year * 12);
     return { ...r, rentPaid, buyerNetWorth, renterNetWorth };
@@ -489,6 +529,21 @@ export function calculate(rawInp: CalcInputs): CalcResult {
     monthlyPayment: buy.monthlyPayment,
     loanAmount: buy.loanAmount,
     horizon: points,
+    netWorth,
     years,
   };
+}
+
+/**
+ * Just the breakeven rent at the chosen horizon, nothing else. The sensitivity tornado runs
+ * this two dozen times per slider settle and reads only `breakevenRent`, so it skips the full
+ * calculate() (the horizon sweep, the per-year net-worth array, the breakdown rows) that those
+ * runs would throw away. Byte-identical to calculate().breakevenRent: same first three steps,
+ * just minus the unread work. A test pins the two together so they can't drift.
+ */
+export function breakevenRentOnly(rawInp: CalcInputs): number {
+  const inp = sanitizeInputs(rawInp);
+  const horizon = Math.max(1, Math.round(inp.yearsToStay));
+  const buy = simulateBuy(inp, horizon, false);
+  return breakevenRentAt(inp, horizon, buy.pvCost);
 }

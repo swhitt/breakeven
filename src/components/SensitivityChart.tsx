@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Label, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Label, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { usd } from "../lib/format";
 import { type SensitivityRow } from "../lib/sensitivity";
 import { niceTicks } from "../lib/ticks";
+import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
 
 // Breakeven rents cluster in the low thousands, where usdCompact's whole-$K rounding
 // collapses every tick to "$2K"; one decimal keeps them distinct ($1.6K, $1.8K).
@@ -14,7 +15,7 @@ function SensitivityTooltip({ active, payload }: { active?: boolean; payload?: {
   if (!active || !payload?.length) return null;
   const r = payload[0].payload;
   return (
-    <div className="rounded-xl border border-line bg-surface px-3 py-2 text-[13px] shadow-lg">
+    <TooltipCard>
       <div className="mb-1 font-semibold text-ink">{r.label}</div>
       <div className="flex items-baseline justify-between gap-6 text-muted">
         <span>{r.factor.fmt(r.factor.lo)}</span>
@@ -31,7 +32,7 @@ function SensitivityTooltip({ active, payload }: { active?: boolean; payload?: {
           "Doesn't change the answer over this range."
         )}
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
@@ -53,46 +54,42 @@ export function SensitivityChart({ rows, monthlyRent }: { rows: SensitivityRow[]
 
   return (
     <>
-    <div
-      className="h-72 w-full sm:h-80"
-      role="img"
-      aria-label={`Tornado chart: how far the breakeven rent moves as each assumption varies. Widest mover is ${rows[0]?.label}. The dashed line is your rent of ${usd(monthlyRent)}; a bar left of it means buying wins for that range, right of it means renting wins, and a bar crossing it could flip the verdict.`}
+    <ChartFrame
+      ariaLabel={`Tornado chart: how far the breakeven rent moves as each assumption varies. Widest mover is ${rows[0]?.label}. The dashed line is your rent of ${usd(monthlyRent)}; a bar left of it means buying wins for that range, right of it means renting wins, and a bar crossing it could flip the verdict.`}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
-          <CartesianGrid horizontal={false} stroke="var(--color-line)" />
-          <XAxis
-            type="number"
-            domain={domain}
-            ticks={ticks}
-            tickLine={false}
-            axisLine={{ stroke: "var(--color-line)" }}
-            tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-            tickFormatter={rentTick}
-          />
-          <YAxis
-            type="category"
-            dataKey="label"
-            width={108}
-            tickLine={false}
-            axisLine={false}
-            tick={{ fontSize: 12, fill: "var(--color-ink)" }}
-          />
-          <Tooltip cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }} content={<SensitivityTooltip />} />
-          {/* Your actual rent: the verdict threshold. Bars that cross it can flip the answer. */}
-          <ReferenceLine x={monthlyRent} stroke="var(--color-rent)" strokeWidth={2} strokeDasharray="6 4">
-            <Label value={`your rent ${usd(monthlyRent)}`} position="top" fontSize={11} fill="var(--color-rent-text)" />
-          </ReferenceLine>
-          {/* minPointSize keeps a near-zero swing (e.g. inflation) visible as a small nub
-              that reads "negligible" instead of vanishing into a 1px sliver. */}
-          <Bar dataKey="range" radius={4} minPointSize={3} isAnimationActive={false}>
-            {rows.map((r) => (
-              <Cell key={r.label} fill={r.flips ? FLIP_COLOR : "var(--color-muted)"} fillOpacity={r.flips ? 1 : 0.4} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+      <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
+        <CartesianGrid horizontal={false} stroke="var(--color-line)" />
+        <XAxis
+          type="number"
+          domain={domain}
+          ticks={ticks}
+          tickLine={false}
+          axisLine={{ stroke: "var(--color-line)" }}
+          tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+          tickFormatter={rentTick}
+        />
+        <YAxis
+          type="category"
+          dataKey="label"
+          width={108}
+          tickLine={false}
+          axisLine={false}
+          tick={{ fontSize: 12, fill: "var(--color-ink)" }}
+        />
+        <Tooltip cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }} content={<SensitivityTooltip />} />
+        {/* Your actual rent: the verdict threshold. Bars that cross it can flip the answer. */}
+        <ReferenceLine x={monthlyRent} stroke="var(--color-rent)" strokeWidth={2} strokeDasharray="6 4">
+          <Label value={`your rent ${usd(monthlyRent)}`} position="top" fontSize={11} fill="var(--color-rent-text)" />
+        </ReferenceLine>
+        {/* minPointSize keeps a near-zero swing (e.g. inflation) visible as a small nub
+            that reads "negligible" instead of vanishing into a 1px sliver. */}
+        <Bar dataKey="range" radius={4} minPointSize={3} isAnimationActive={false}>
+          {rows.map((r) => (
+            <Cell key={r.label} fill={r.flips ? FLIP_COLOR : "var(--color-muted)"} fillOpacity={r.flips ? 1 : 0.4} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ChartFrame>
       {/* The x-axis is breakeven rent, so the verdict sides read off the dashed "your rent"
           line: lower breakeven (left) means buying already wins; higher (right) means renting. */}
       <div className="mt-2 flex items-center justify-between text-xs">

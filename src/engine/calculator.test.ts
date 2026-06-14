@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculate, monthlyMortgagePayment, type CalcInputs } from "./calculator";
+import { breakevenRentOnly, calculate, monthlyMortgagePayment, type CalcInputs } from "./calculator";
 
 const base: CalcInputs = {
   homePrice: 400000,
@@ -87,6 +87,33 @@ describe("calculate", () => {
     const noPmi = calculate({ ...base, downPaymentPct: 0.5 });
     const totalPmi = noPmi.years.reduce((s, y) => s + y.costs.pmi, 0);
     expect(totalPmi).toBe(0);
+  });
+
+  it("drops PMI sooner in an appreciating market (LTV trigger is current value, not original)", () => {
+    // 10% down starts at 90% LTV. With appreciation the home outgrows the loan and crosses
+    // 80% LTV in a couple years; flat, only amortization gets there, which is far slower, so
+    // the rising market accrues materially less total PMI for exactly the low-down buyer.
+    const lowDown = { ...base, downPaymentPct: 0.1 };
+    const sumPmi = (r: ReturnType<typeof calculate>) => r.years.reduce((s, y) => s + y.costs.pmi, 0);
+    const flat = sumPmi(calculate({ ...lowDown, homeAppreciation: 0 }));
+    const rising = sumPmi(calculate({ ...lowDown, homeAppreciation: 0.08 }));
+    expect(rising).toBeLessThan(flat);
+    expect(rising).toBeGreaterThan(0); // still charged in the early months, just fewer years
+  });
+
+  it("tapers the SALT cap to the 2030 cliff instead of holding the entry-year value flat", () => {
+    // High property tax + other SALT so the cap binds; a 9-year stay from 2026 crosses 2030,
+    // where the OBBBA cap reverts to $10k. Years before that ride the +1%/yr schedule.
+    const r = calculate({
+      ...base,
+      homePrice: 1_500_000,
+      propertyTax: { kind: "pctOfValue", rate: 0.02 },
+      otherSALT: 20000,
+    });
+    const y2029 = r.years[3]; // year 4
+    const y2030 = r.years[4]; // year 5, the cliff
+    expect(y2030.saltUsed).toBeLessThan(y2029.saltUsed);
+    expect(y2030.saltUsed).toBe(10000); // base SALT exceeds the reverted cap, so it pins to $10k
   });
 
   it("dollar-mode maintenance equals percent-mode when value is flat (no appreciation/inflation)", () => {
@@ -235,5 +262,32 @@ describe("net worth (buy vs rent)", () => {
     // The renter invested ~down payment + closing ($80k + $12k) instead of buying; a year in
     // it is a real six-figure-ish asset, not zero.
     expect(r.years[0].renterNetWorth).toBeGreaterThan(80000);
+  });
+
+  it("exposes net worth across the FULL horizon so the chart can show a past-the-stay crossover", () => {
+    const r = calculate(base); // stay 9, but breakeven is later, so years[] alone can't show it
+    // The chart reads result.netWorth, which must span the whole horizon, not just the stay.
+    expect(r.netWorth).toHaveLength(r.horizon.length);
+    expect(r.netWorth.length).toBeGreaterThan(base.yearsToStay);
+    const be = r.breakevenYear!;
+    expect(be).not.toBeNull();
+    // Wealth crosses in the same year the cost lines do (by construction).
+    expect(r.netWorth[be - 1].buyerNetWorth).toBeGreaterThanOrEqual(r.netWorth[be - 1].renterNetWorth);
+    if (be >= 2) expect(r.netWorth[be - 2].renterNetWorth).toBeGreaterThan(r.netWorth[be - 2].buyerNetWorth);
+  });
+});
+
+describe("breakevenRentOnly", () => {
+  it("matches calculate().breakevenRent across varied inputs (the fast path can't drift)", () => {
+    const cases: CalcInputs[] = [
+      base,
+      { ...base, downPaymentPct: 0.1 },
+      { ...base, homePrice: 900_000, marginalTaxRate: 0.32, standardDeduction: 30000 },
+      { ...base, yearsToStay: 3 },
+      { ...base, homeAppreciation: 0.08, investmentReturn: 0.07 },
+    ];
+    for (const c of cases) {
+      expect(breakevenRentOnly(c)).toBeCloseTo(calculate(c).breakevenRent, 6);
+    }
   });
 });

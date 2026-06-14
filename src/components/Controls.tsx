@@ -34,7 +34,7 @@ function SliderRow({
 }) {
   return (
     <Field label={label} badge={badge} hint={hint}>
-      <Slider value={value} min={min} max={max} step={step} onChange={onChange} format={format} />
+      <Slider value={value} min={min} max={max} step={step} onChange={onChange} format={format} label={label} />
     </Field>
   );
 }
@@ -81,6 +81,7 @@ function CostRow({
           typed dollar figure against. */}
       {badge}
       <Segmented
+        ariaLabel={`${label} cost basis`}
         value={mode}
         onChange={(v) => setMode(v as "pct" | "amount")}
         options={[
@@ -96,8 +97,11 @@ function CostRow({
       : homePrice > 0
         ? `${pct(annual / homePrice, 2)} of today's value, rising with inflation`
         : undefined;
+  // A labelled group, not a <label>: the header holds a Segmented (toggle buttons), and an
+  // interactive control nested in a <label> is invalid. Group mode means the inner control
+  // needs its own name, so thread the field label down to it.
   return (
-    <Field label={label} badge={header} hint={hint}>
+    <Field label={label} badge={header} hint={hint} group>
       {mode === "pct" ? (
         <Slider
           value={rate}
@@ -106,9 +110,15 @@ function CostRow({
           step={rateStep}
           onChange={(n) => onChange({ kind: "pctOfValue", rate: n })}
           format={(n) => pct(n, rateDigits)}
+          label={label}
         />
       ) : (
-        <MoneyInput value={annual} onChange={(n) => onChange({ kind: "flatAnnual", annual: n })} step={annualStep} />
+        <MoneyInput
+          value={annual}
+          onChange={(n) => onChange({ kind: "flatAnnual", annual: n })}
+          step={annualStep}
+          ariaLabel={label}
+        />
       )}
     </Field>
   );
@@ -155,6 +165,7 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
       group
       badge={
         <Segmented
+          ariaLabel="Tax rate source"
           value={auto ? "auto" : "manual"}
           onChange={(v) => patch({ taxAuto: v === "auto" })}
           options={[
@@ -223,6 +234,7 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
           step={0.01}
           onChange={(n) => patch({ marginalTaxRate: n })}
           format={(n) => pct(n, 0)}
+          label="Income tax rate"
         />
       )}
     </Field>
@@ -325,8 +337,9 @@ export function Controls({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Field label="Tax filing">
+        <Field label="Tax filing" group>
           <Segmented
+            ariaLabel="Tax filing"
             value={inputs.filingJointly ? "joint" : "single"}
             onChange={(v) =>
               patch({
@@ -340,8 +353,9 @@ export function Controls({
             ]}
           />
         </Field>
-        <Field label="Mortgage term">
+        <Field label="Mortgage term" group>
           <Segmented
+            ariaLabel="Mortgage term"
             value={inputs.mortgageTermYears}
             onChange={(v) => patch({ mortgageTermYears: v, mortgageRate: v === 15 ? market.mortgage.rate15 : market.mortgage.rate30 })}
             options={[

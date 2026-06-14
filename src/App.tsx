@@ -1,5 +1,7 @@
-import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { calculate, housingPaymentLines, type CalcInputs, type CalcResult } from "./engine/calculator";
+import { CHART_HEIGHT_CLASS } from "./components/chart/ChartFrame";
+import { useInView } from "./lib/useInView";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
@@ -21,18 +23,15 @@ import {
 import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
 import { fetchLiveMarket } from "./data/live";
-import type { LocationData, MarketData, StateRateTable } from "./data/types";
+import type { LocationData, MarketData } from "./data/types";
+import { insurance, locations, propertyTax, usHome } from "./data/rates";
 
 import marketRaw from "./data/market.json";
-import locationsRaw from "./data/locations.json";
-import propertyTaxRaw from "./data/propertyTax.json";
-import insuranceRaw from "./data/insurance.json";
 
 // Recharts (+d3) is ~half the bundle and only used below the fold, so load it
-// lazily off the critical path.
-const CrossoverChart = lazy(() =>
-  import("./components/CrossoverChart").then((m) => ({ default: m.CrossoverChart })),
-);
+// lazily off the critical path. The four charts share one chunk; ChartCard gates each
+// behind an IntersectionObserver so the chunk only loads once a chart nears the viewport.
+const NetWorthChart = lazy(() => import("./components/NetWorthChart").then((m) => ({ default: m.NetWorthChart })));
 const AdvantageChart = lazy(() =>
   import("./components/AdvantageChart").then((m) => ({ default: m.AdvantageChart })),
 );
@@ -43,13 +42,6 @@ const SensitivityChart = lazy(() =>
   import("./components/SensitivityChart").then((m) => ({ default: m.SensitivityChart })),
 );
 
-const locations = locationsRaw as LocationData[];
-// The JSON carries _source/_asOf string metadata alongside the numeric rates,
-// so cast through unknown; state-code lookups are unaffected.
-const propertyTax = propertyTaxRaw as unknown as StateRateTable;
-const insurance = insuranceRaw as unknown as StateRateTable;
-
-const usHome = locations.find((l) => l.id === "united-states") ?? locations[0];
 const METRO_KEY = "bow:metro"; // last selected metro (detected or chosen)
 const HOME_KEY = "bow:home"; // the auto-detected locale, never overwritten by manual picks
 const OVERRIDES_KEY = "bow:overrides";
@@ -194,6 +186,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   const shareActive = useRef(SHARE != null);
   const [copied, setCopied] = useState(false);
   const [justReset, setJustReset] = useState(false);
+  // A dedicated polite region for the Share/Reset confirmations, kept separate from the
+  // verdict announcer so the two can't clobber each other's messages.
+  const [actionMsg, setActionMsg] = useState("");
   // True once the user edits any input; gates the one-time re-seed from live data.
   const touched = useRef(false);
   const [market, setMarket] = useState<MarketData>(() => marketRaw as MarketData);
@@ -221,6 +216,12 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   }, [inputs]);
 
   const result = useMemo(() => calculate(inputsForCalc), [inputsForCalc]);
+
+  // Charts read a DEFERRED copy of the result so a slider drag updates the headline number
+  // every frame while the (heavier to re-render) SVG charts settle one frame behind. During an
+  // urgent drag React hands back the previous result by reference, so the memoized chart
+  // components bail their whole subtree instead of reconciling three charts per frame.
+  const deferredResult = useDeferredValue(result);
 
   // The tornado data, computed once here so the chart and the plain-English "what your
   // verdict leans on" callout read identical numbers. It runs ~12 full engine sweeps, so we
@@ -383,7 +384,11 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     // Flash a confirmation so the click clearly registers (the inputs may snap back
     // to values that already matched, leaving no other visible change).
     setJustReset(true);
-    window.setTimeout(() => setJustReset(false), 1500);
+    setActionMsg("Reset to your location defaults");
+    window.setTimeout(() => {
+      setJustReset(false);
+      setActionMsg("");
+    }, 1500);
     // Leaving a shared view: resume normal persistence and drop the ?s= token so a
     // reload doesn't snap back to it.
     if (shareActive.current) {
@@ -455,7 +460,11 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     try {
       await navigator.clipboard?.writeText(url);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      setActionMsg("Link copied");
+      window.setTimeout(() => {
+        setCopied(false);
+        setActionMsg("");
+      }, 1800);
     } catch {
       /* clipboard unavailable */
     }
@@ -517,6 +526,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
       <main className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
         <div aria-live="polite" className="sr-only">
           {announce}
+        </div>
+        <div aria-live="polite" className="sr-only">
+          {actionMsg}
         </div>
         <Hero metro={displayMetro} result={result} inputs={inputs} />
 
@@ -612,80 +624,93 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
 
             <MonthlyPayment result={result} />
 
-            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
-              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-base font-bold">Cost of buying vs. renting over time</h3>
-                <Legend />
-              </div>
-              <p className="mb-4 text-sm text-muted">
-                Total net cost, in today's dollars, if you sold and moved out after each year. Where the lines cross is
-                the point buying pulls ahead; the faint dot marks the year you said you'll stay.
-              </p>
-              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
-                <CrossoverChart
-                  data={result.horizon}
-                  breakevenYear={result.breakevenYear}
-                  yearsToStay={inputs.yearsToStay}
-                />
-              </Suspense>
-            </div>
+            {/* Wealth first: what you're actually worth is the question people feel; the cost
+                views below explain how you get there. */}
+            <ChartCard
+              title="What you're worth, buying vs renting"
+              legend={<Legend />}
+              note={
+                <>
+                  Your wealth if you sold and moved out after each year. Buying is home equity after selling costs and
+                  capital-gains tax. Renting is the down payment plus monthly savings, invested. They cross the same year
+                  buying pulls ahead.
+                </>
+              }
+            >
+              <NetWorthChart
+                data={deferredResult.netWorth}
+                breakevenYear={deferredResult.breakevenYear}
+                yearsToStay={inputs.yearsToStay}
+              />
+            </ChartCard>
 
-            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
-              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-base font-bold">How far ahead each option is</h3>
-                <AdvantageLegend />
-              </div>
-              <p className="mb-4 text-sm text-muted">
-                The gap between the two lines above, plotted off a zero line so it's legible. Below zero, renting is
-                ahead by that much; above zero, buying is. Where it crosses is the year buying takes the lead.
-              </p>
-              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
-                <AdvantageChart
-                  data={result.horizon}
-                  breakevenYear={result.breakevenYear}
-                  yearsToStay={inputs.yearsToStay}
-                />
-              </Suspense>
-            </div>
+            <ChartCard
+              title="Cost gap: how far ahead buying or renting is"
+              legend={<AdvantageLegend />}
+              note={
+                <>
+                  Cumulative net cost in today's dollars, plotted as the gap between renting and buying. Below zero
+                  renting is ahead, above zero buying is. Where it crosses is the year buying takes the lead. Hover for
+                  the running total on each side.
+                </>
+              }
+            >
+              <AdvantageChart
+                data={deferredResult.horizon}
+                breakevenYear={deferredResult.breakevenYear}
+                yearsToStay={inputs.yearsToStay}
+              />
+            </ChartCard>
 
-            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
-              <h3 className="text-base font-bold">Where each year's payment goes</h3>
-              <p className="mb-4 mt-1 text-sm text-muted">
-                Every year you own, split into where the money lands. Interest dominates early and fades as principal
-                (which builds equity, not a sunk cost) takes over{inputs.yearsToStay === 1 ? "" : " across your stay"}.
-              </p>
-              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
-                <CostCompositionChart years={result.years} />
-              </Suspense>
-            </div>
+            <ChartCard
+              title="Where each year's payment goes"
+              note={
+                inputs.yearsToStay === 1 ? (
+                  <>
+                    Your one year of owning, split into where the money lands. Most of an early payment is interest; the
+                    principal slice (green) is the part that builds equity instead of vanishing.
+                  </>
+                ) : (
+                  <>
+                    Every year you own, split into where the money lands. Interest dominates early and fades as principal
+                    (which builds equity, not a sunk cost) takes over across your stay.
+                  </>
+                )
+              }
+            >
+              <CostCompositionChart years={deferredResult.years} />
+            </ChartCard>
 
-            <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
-              <h3 className="text-base font-bold">What actually moves the answer</h3>
-              {driver && (
-                <p className="mt-1 text-sm font-medium text-ink">
-                  {driver.flips ? (
-                    <>
-                      Your verdict leans hardest on{" "}
-                      <span className="font-semibold">{driver.label.toLowerCase()}</span>, the one assumption here that
-                      could flip it on its own.
-                    </>
-                  ) : (
-                    <>
-                      Even the widest swing, <span className="font-semibold">{driver.label.toLowerCase()}</span>,
-                      doesn't change the verdict over a realistic range, so this call is pretty robust.
-                    </>
-                  )}
-                </p>
-              )}
-              <p className="mb-4 mt-1 text-sm text-muted">
-                Each bar swings one uncertain assumption across a realistic range and shows where the breakeven rent
-                lands. Left of your rent, buying wins; right of it, renting wins. The widest bars are what your verdict
-                hangs on, and any bar crossing your rent is an assumption that could flip it on its own.
-              </p>
-              <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
-                <SensitivityChart rows={sensitivity} monthlyRent={inputs.monthlyRent} />
-              </Suspense>
-            </div>
+            <ChartCard
+              title="What actually moves the answer"
+              lead={
+                driver && (
+                  <p className="mt-1 text-sm font-medium text-ink">
+                    {driver.flips ? (
+                      <>
+                        Your verdict leans hardest on{" "}
+                        <span className="font-semibold">{driver.label.toLowerCase()}</span>, the one assumption here that
+                        could flip it on its own.
+                      </>
+                    ) : (
+                      <>
+                        Even the widest swing, <span className="font-semibold">{driver.label.toLowerCase()}</span>,
+                        doesn't change the verdict over a realistic range, so this call is pretty robust.
+                      </>
+                    )}
+                  </p>
+                )
+              }
+              note={
+                <>
+                  Each bar swings one uncertain assumption across a realistic range and shows where the breakeven rent
+                  lands. Left of your rent, buying wins; right of it, renting wins. The widest bars are what your verdict
+                  hangs on, and any bar crossing your rent is an assumption that could flip it on its own.
+                </>
+              }
+            >
+              <SensitivityChart rows={sensitivity} monthlyRent={inputs.monthlyRent} />
+            </ChartCard>
           </section>
         </div>
 
@@ -751,15 +776,22 @@ function Header({ market }: { market: MarketData }) {
 
 function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const renting = result.verdict === "rent";
+  // Honor the same close-call threshold the Verdict card and announcer use, so the giant
+  // headline can't shout a winner while the card right below it reads "Toss-up".
+  const closeCall = isCloseCall(result, inputs);
   return (
     <div className="pt-10 sm:pt-14">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted">
         Should you rent or buy in {metro}?
       </p>
       <h1 className="mt-2 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-        {renting ? (
+        {closeCall ? (
           <>
-            At <span className="text-rent">{usd(inputs.monthlyRent)}/mo</span>, renting comes out ahead.
+            At <span className="text-ink">{usd(inputs.monthlyRent)}/mo</span> rent, it's basically a toss-up.
+          </>
+        ) : renting ? (
+          <>
+            At <span className="text-rent">{usd(inputs.monthlyRent)}/mo</span> rent, renting comes out ahead.
           </>
         ) : (
           <>
@@ -769,9 +801,15 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
       </h1>
       <p className="mt-3 max-w-2xl text-lg text-muted">
         Renting and buying break even at a rent of{" "}
-        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>, and you're{" "}
-        {renting ? "under" : "over"} that at{" "}
-        <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>.{" "}
+        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>
+        {closeCall ? (
+          <>, so this close it comes down to your assumptions. </>
+        ) : (
+          <>
+            , and you're {renting ? "under" : "over"} that at{" "}
+            <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>.{" "}
+          </>
+        )}
         {result.breakevenYear == null ? (
           <>Owning never catches up here, even over the longest horizon below.</>
         ) : (
@@ -969,6 +1007,48 @@ function MiniStat({ label, value }: { label: string; value: string }) {
     <div className="px-5 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className="tnum text-sm font-bold">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * The shared scaffold every chart card repeats: the rounded card, an h3 (with an optional
+ * legend on the same baseline), an optional lead paragraph, the muted note, and a Suspense
+ * boundary gated behind useInView so the lazy chart (and the recharts chunk) only mounts once
+ * the card scrolls near the viewport. The placeholder reserves the chart's height both before
+ * it enters view and while the chunk loads, so there's no layout shift.
+ */
+function ChartCard({
+  title,
+  legend,
+  lead,
+  note,
+  children,
+}: {
+  title: string;
+  legend?: ReactNode;
+  lead?: ReactNode;
+  note: ReactNode;
+  children: ReactNode;
+}) {
+  const [ref, inView] = useInView<HTMLDivElement>();
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+      {legend ? (
+        <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-base font-bold">{title}</h3>
+          {legend}
+        </div>
+      ) : (
+        <h3 className="text-base font-bold">{title}</h3>
+      )}
+      {lead}
+      <p className={legend ? "mb-4 text-sm text-muted" : "mb-4 mt-1 text-sm text-muted"}>{note}</p>
+      <div ref={ref}>
+        <Suspense fallback={<div className={CHART_HEIGHT_CLASS} />}>
+          {inView ? children : <div className={CHART_HEIGHT_CLASS} />}
+        </Suspense>
+      </div>
     </div>
   );
 }

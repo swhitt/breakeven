@@ -20,24 +20,37 @@ export function Field({
   group?: boolean;
 }) {
   const id = useId();
-  const body = (
-    <>
-      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-        <span id={group ? id : undefined} className="whitespace-nowrap text-sm font-medium text-ink">
-          {label}
-        </span>
-        {badge}
-      </div>
-      {children}
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
-    </>
+  const hintId = useId();
+  const labelRow = (
+    <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+      <span id={group ? id : undefined} className="whitespace-nowrap text-sm font-medium text-ink">
+        {label}
+      </span>
+      {badge}
+    </div>
   );
+  const hintEl = hint ? (
+    <p id={hintId} className="mt-1 text-xs text-muted">
+      {hint}
+    </p>
+  ) : null;
   return group ? (
     <div role="group" aria-labelledby={id}>
-      {body}
+      {labelRow}
+      {children}
+      {hintEl}
     </div>
   ) : (
-    <label className="block">{body}</label>
+    // The hint lives OUTSIDE the <label>: it can contain an interactive control (the "use this
+    // rate" button), and an interactive element nested in a <label> is invalid HTML (a click
+    // would also activate the label's input). Visual layout is unchanged, it still sits below.
+    <>
+      <label className="block">
+        {labelRow}
+        {children}
+      </label>
+      {hintEl}
+    </>
   );
 }
 
@@ -58,12 +71,15 @@ export function MoneyInput({
   step = 1000,
   max = 1e12,
   placeholder,
+  ariaLabel,
 }: {
   value: number;
   onChange: (n: number) => void;
   step?: number;
   max?: number;
   placeholder?: string;
+  // Needed when the input isn't the lone child of a <label> (e.g. CostRow's group-mode field).
+  ariaLabel?: string;
 }) {
   // Show 0 as an empty field (with a placeholder) rather than a literal "0", which reads as a
   // real entry, e.g. an income of $0.
@@ -90,6 +106,7 @@ export function MoneyInput({
       <input
         inputMode="numeric"
         placeholder={placeholder}
+        aria-label={ariaLabel}
         className="tnum w-full bg-transparent py-2.5 pr-3 text-[15px] font-medium outline-none placeholder:font-normal placeholder:text-muted/60"
         value={text}
         onChange={(e) => {
@@ -120,6 +137,7 @@ export function Slider({
   step,
   onChange,
   format,
+  label,
 }: {
   value: number;
   min: number;
@@ -127,6 +145,9 @@ export function Slider({
   step: number;
   onChange: (n: number) => void;
   format: (n: number) => string;
+  // An explicit accessible name, needed when the slider isn't the lone child of a <label>
+  // (group-mode fields, and CostRow where a Segmented + range share one field).
+  label?: string;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -137,6 +158,7 @@ export function Slider({
         max={max}
         step={step}
         value={value}
+        aria-label={label}
         aria-valuetext={format(value)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
@@ -145,22 +167,27 @@ export function Slider({
   );
 }
 
-/** Segmented control for small, mutually exclusive choices. */
+/** Segmented control for small, mutually exclusive choices. Uses the toggle-button pattern
+ *  (aria-pressed per option) so the active choice is exposed to assistive tech, not signalled
+ *  by background color alone. `ariaLabel` names the group for screen readers. */
 export function Segmented<T extends string | number>({
   options,
   value,
   onChange,
+  ariaLabel,
 }: {
   options: { label: string; value: T }[];
   value: T;
   onChange: (v: T) => void;
+  ariaLabel?: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-line bg-surface p-0.5">
+    <div className="inline-flex rounded-lg border border-line bg-surface p-0.5" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={String(o.value)}
           type="button"
+          aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={
             "rounded-md px-3 py-1.5 text-sm font-medium transition-colors " +

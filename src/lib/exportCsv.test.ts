@@ -1,21 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { calculate } from "../engine/calculator";
 import { buildInputs } from "../engine/defaults";
-import type { LocationData, MarketData, StateRateTable } from "../data/types";
+import type { MarketData } from "../data/types";
+import { insurance, locations, propertyTax } from "../data/rates";
 import market from "../data/market.json";
-import locations from "../data/locations.json";
-import propertyTax from "../data/propertyTax.json";
-import insurance from "../data/insurance.json";
 import { buildBreakdownCsv, csvFilename } from "./exportCsv";
 
 function fixture() {
-  const loc = (locations as LocationData[]).find((l) => l.id !== "united-states") ?? (locations as LocationData[])[0];
-  const inputs = buildInputs(
-    loc,
-    market as unknown as MarketData,
-    propertyTax as unknown as StateRateTable,
-    insurance as unknown as StateRateTable,
-  );
+  const loc = locations.find((l) => l.id !== "united-states") ?? locations[0];
+  const inputs = buildInputs(loc, market as unknown as MarketData, propertyTax, insurance);
   const result = calculate(inputs);
   const csv = buildBreakdownCsv({
     inputs,

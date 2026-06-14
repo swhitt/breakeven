@@ -1,18 +1,9 @@
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Label,
-  ReferenceDot,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { memo } from "react";
+import { Area, CartesianGrid, ComposedChart, Label, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { HorizonPoint } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 import { breakevenLabelPosition, niceTicks, yearTicks } from "../lib/ticks";
+import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
 
 interface GapRow {
   year: number;
@@ -35,7 +26,7 @@ function AdvantageTooltip({
   const row = payload[0].payload;
   const buyAhead = row.gap >= 0;
   return (
-    <div className="rounded-xl border border-line bg-surface px-3 py-2 text-[13px] shadow-lg">
+    <TooltipCard>
       <div className="mb-1 text-muted">
         After {label} year{label === 1 ? "" : "s"}
       </div>
@@ -53,7 +44,7 @@ function AdvantageTooltip({
         </span>
         <span className="tnum font-bold text-ink">{usd(Math.abs(row.gap))}</span>
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
@@ -63,7 +54,7 @@ function AdvantageTooltip({
  * the crossover is a few pixels); here the whole story is the distance from zero,
  * so the breakeven year reads as the point the area flips sides.
  */
-export function AdvantageChart({
+export const AdvantageChart = memo(function AdvantageChart({
   data,
   breakevenYear,
   yearsToStay,
@@ -102,86 +93,84 @@ export function AdvantageChart({
     : `Net financial advantage of buying versus renting over ${rows.length} years. Renting stays ahead the whole time at this rent.`;
 
   return (
-    <div className="h-72 w-full sm:h-80" role="img" aria-label={ariaLabel}>
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }} accessibilityLayer>
-          <defs>
-            <linearGradient id="advFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={0.22} />
-              <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={0.22} />
-            </linearGradient>
-            <linearGradient id="advStroke" x1="0" y1="0" x2="0" y2="1">
-              <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={1} />
-              <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={1} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--color-line)" vertical={false} />
-          <XAxis
-            dataKey="year"
-            tickLine={false}
-            axisLine={{ stroke: "var(--color-line)" }}
-            tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-            tickFormatter={(y) => `${y}y`}
-            ticks={yearTicks(rows.length)}
-          />
-          <YAxis
-            domain={[domainMin, domainMax]}
-            ticks={niceTicks(domainMin, domainMax)}
-            tickLine={false}
-            axisLine={false}
-            width={48}
-            tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-            tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
-          />
-          <Tooltip cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }} content={<AdvantageTooltip />} />
-          {/* Zero line is the whole point: above it buying wins, below it renting wins. */}
-          <ReferenceLine y={0} stroke="var(--color-muted)" strokeWidth={1.5} />
-          <Area
-            type="monotone"
-            dataKey="gap"
-            name="gap"
-            stroke="url(#advStroke)"
-            strokeWidth={2.5}
-            fill="url(#advFill)"
-            dot={false}
-            activeDot={{ r: 4 }}
-            isAnimationActive={false}
-          />
-          {/* Breakeven: a full-height guide plus a labeled marker right on the crossing,
-              so the label sits near mid-height (clear of the top axis tick). */}
-          {breakevenYear != null && (
-            <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4" />
-          )}
-          {cross && (
-            <ReferenceDot x={cross.year} y={cross.gap} r={4} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
-              <Label
-                value={`breakeven ${breakevenYear}y`}
-                position={breakevenLabelPosition(breakevenYear!, rows.length)}
-                fontSize={11}
-                fill="var(--color-muted)"
-              />
-            </ReferenceDot>
-          )}
-          {/* The user's chosen horizon, ringed in paper, annotated with the advantage there. */}
-          {stay && (
-            <ReferenceDot
-              x={stay.year}
-              y={stay.gap}
-              r={4.5}
-              fill={stay.gap >= 0 ? "var(--color-buy)" : "var(--color-rent)"}
-              stroke="var(--color-paper)"
-              strokeWidth={2}
-            >
-              <Label
-                value={`your stay · ${usdCompact(Math.abs(stay.gap))}`}
-                position={stay.gap >= 0 ? "top" : "bottom"}
-                fontSize={11}
-                fill="var(--color-muted)"
-              />
-            </ReferenceDot>
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
+    <ChartFrame ariaLabel={ariaLabel}>
+      <ComposedChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }} accessibilityLayer>
+        <defs>
+          <linearGradient id="advFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={0.22} />
+            <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={0.22} />
+          </linearGradient>
+          <linearGradient id="advStroke" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={1} />
+            <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={1} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="var(--color-line)" vertical={false} />
+        <XAxis
+          dataKey="year"
+          tickLine={false}
+          axisLine={{ stroke: "var(--color-line)" }}
+          tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+          tickFormatter={(y) => `${y}y`}
+          ticks={yearTicks(rows.length)}
+        />
+        <YAxis
+          domain={[domainMin, domainMax]}
+          ticks={niceTicks(domainMin, domainMax)}
+          tickLine={false}
+          axisLine={false}
+          width={48}
+          tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+          tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
+        />
+        <Tooltip cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }} content={<AdvantageTooltip />} />
+        {/* Zero line is the whole point: above it buying wins, below it renting wins. */}
+        <ReferenceLine y={0} stroke="var(--color-muted)" strokeWidth={1.5} />
+        <Area
+          type="monotone"
+          dataKey="gap"
+          name="gap"
+          stroke="url(#advStroke)"
+          strokeWidth={2.5}
+          fill="url(#advFill)"
+          dot={false}
+          activeDot={{ r: 4 }}
+          isAnimationActive={false}
+        />
+        {/* Breakeven: a full-height guide plus a labeled marker right on the crossing,
+            so the label sits near mid-height (clear of the top axis tick). */}
+        {breakevenYear != null && (
+          <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4" />
+        )}
+        {cross && (
+          <ReferenceDot x={cross.year} y={cross.gap} r={4} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
+            <Label
+              value={`breakeven ${breakevenYear}y`}
+              position={breakevenLabelPosition(breakevenYear!, rows.length)}
+              fontSize={11}
+              fill="var(--color-muted)"
+            />
+          </ReferenceDot>
+        )}
+        {/* The user's chosen horizon, ringed in paper, annotated with the advantage there. */}
+        {stay && (
+          <ReferenceDot
+            x={stay.year}
+            y={stay.gap}
+            r={4.5}
+            fill={stay.gap >= 0 ? "var(--color-buy)" : "var(--color-rent)"}
+            stroke="var(--color-paper)"
+            strokeWidth={2}
+          >
+            <Label
+              value={`your stay · ${usdCompact(Math.abs(stay.gap))}`}
+              position={stay.gap >= 0 ? "top" : "bottom"}
+              fontSize={11}
+              fill="var(--color-muted)"
+            />
+          </ReferenceDot>
+        )}
+      </ComposedChart>
+    </ChartFrame>
   );
-}
+});
