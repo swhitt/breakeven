@@ -57,13 +57,17 @@ export function MoneyInput({
   onChange,
   step = 1000,
   max = 1e12,
+  placeholder,
 }: {
   value: number;
   onChange: (n: number) => void;
   step?: number;
   max?: number;
+  placeholder?: string;
 }) {
-  const [text, setText] = useState(() => value.toLocaleString("en-US"));
+  // Show 0 as an empty field (with a placeholder) rather than a literal "0", which reads as a
+  // real entry, e.g. an income of $0.
+  const [text, setText] = useState(() => (value ? value.toLocaleString("en-US") : ""));
 
   // Sync with external changes (location switch, reset) without disrupting
   // typing: only rewrite when the shown number actually diverges from `value`.
@@ -85,7 +89,8 @@ export function MoneyInput({
       <span className="pl-3 pr-1 text-muted">$</span>
       <input
         inputMode="numeric"
-        className="tnum w-full bg-transparent py-2.5 pr-3 text-[15px] font-medium outline-none"
+        placeholder={placeholder}
+        className="tnum w-full bg-transparent py-2.5 pr-3 text-[15px] font-medium outline-none placeholder:font-normal placeholder:text-muted/60"
         value={text}
         onChange={(e) => {
           const raw = e.target.value.replace(/[^0-9]/g, "");

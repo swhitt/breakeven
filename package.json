@@ -15,6 +15,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@vercel/blob": "^2.4.0",
     "@vercel/og": "^0.11.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -173,16 +173,38 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted">Household income (gross)</span>
-              <MoneyInput value={inputs.annualIncome} onChange={(n) => patch({ annualIncome: n })} step={5000} />
+              <span className="mb-1 block text-xs font-medium text-muted">Household income</span>
+              <MoneyInput
+                value={inputs.annualIncome}
+                onChange={(n) => patch({ annualIncome: n })}
+                step={5000}
+                placeholder="before tax"
+              />
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted">State</span>
               <StateSelect value={inputs.taxState} onChange={(s) => patch({ taxState: s })} />
             </label>
           </div>
+          {hasIncome ? (
+            <div className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+              <span className="tnum font-bold text-ink">{pct(est.federal, 1)}</span>{" "}
+              <span className="text-muted">
+                federal rate values the deduction
+                {est.combined > est.federal + 0.0005 ? `, ${pct(est.combined, 1)} combined with ${stateLabel ?? "state/local"}` : ""}
+                .
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">
+              Enter income to estimate your rate. Until then, {pct(inputs.marginalTaxRate, 0)} is assumed.
+            </p>
+          )}
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted">Local income tax</span>
+            <span className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 text-xs font-medium text-muted">
+              Local income tax
+              <span className="font-normal">city/county, on top of state (NYC ≈ 3.9%)</span>
+            </span>
             <Slider
               value={inputs.localTaxRate}
               min={0}
@@ -191,24 +213,7 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
               onChange={(n) => patch({ localTaxRate: n })}
               format={(n) => pct(n, 2)}
             />
-            <span className="mt-1 block text-xs text-muted">
-              City/county, on top of state. e.g. NYC ≈ 3.9%, Yonkers, some OH/PA municipalities. Leave at 0 if none.
-            </span>
           </label>
-          {hasIncome ? (
-            <div className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">
-              <span className="tnum font-bold text-ink">{pct(est.federal, 1)}</span>{" "}
-              <span className="text-muted">
-                federal rate values the deduction · {pct(est.combined, 1)} combined marginal (fed {pct(est.federal, 1)}
-                {est.state > 0 && stateLabel ? ` + ${stateLabel} ${pct(est.state, 1)}` : ""}
-                {est.local > 0 ? ` + local ${pct(est.local, 1)}` : ""})
-              </span>
-            </div>
-          ) : (
-            <p className="text-xs text-muted">
-              Enter your income to estimate a rate. Until then, {pct(inputs.marginalTaxRate, 0)} is used.
-            </p>
-          )}
         </div>
       ) : (
         <Slider
@@ -358,7 +363,11 @@ export function Controls({
             onChange={(n) => patch({ homeAppreciation: n })}
             format={(n) => pct(n, 1)}
             hint={
-              selected.appreciation5yr != null ? (
+              // With a ZIP active, `selected` is the base metro the ZIP was reached from, not
+              // the ZIP's location, so its 5yr run is irrelevant (and misleading, e.g. a Dallas
+              // figure while viewing a Massachusetts ZIP). We have no ZIP-level appreciation, so
+              // fall back to the generic note.
+              !activeZip && selected.appreciation5yr != null ? (
                 <button
                   type="button"
                   className="text-rent-text underline-offset-2 hover:underline"
