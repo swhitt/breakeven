@@ -156,6 +156,12 @@ export function Derivation({
               )}
             </div>
           </div>
+        ) : inputs.taxAuto ? (
+          <p className="text-muted">
+            Add your <span className="font-semibold text-ink">household income</span> above and this fills in from your
+            actual 2026 federal and state brackets. Until then we assume{" "}
+            <span className="font-semibold text-ink">{pct(inputs.marginalTaxRate, 0)}</span>.
+          </p>
         ) : (
           <p className="text-muted">
             Marginal rate set manually to <span className="font-semibold text-ink">{pct(inputs.marginalTaxRate, 0)}</span>
