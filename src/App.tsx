@@ -83,6 +83,22 @@ function saveOverrides(o: Partial<AppInputs>) {
   }
 }
 
+// The wordmark is "go home": a full reset back to the main page, your detected city,
+// and every input at its default. Drop remembered edits, point the stored metro at the
+// detected home (or clear it so the root re-detects), then hard-navigate to / so the
+// URL, tab title, and all state rebuild from scratch instead of lingering on /metro.
+function goHome() {
+  try {
+    saveOverrides({});
+    const home = localStorage.getItem(HOME_KEY);
+    if (home) localStorage.setItem(METRO_KEY, home);
+    else localStorage.removeItem(METRO_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  window.location.assign("/");
+}
+
 // A ?s= share token decoded into a starting location + overrides, or null. It
 // carries only the fields the sharer changed from defaults, so we validate each
 // against a reference inputs object by type and re-derive the rest from live data.
@@ -542,10 +558,20 @@ function Header({ market }: { market: MarketData }) {
     <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-extrabold tracking-tight">
+          <a
+            href="/"
+            onClick={(e) => {
+              // Plain left-click resets in place; let modified clicks open / normally.
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              goHome();
+            }}
+            title="Reset to your city and defaults"
+            className="rounded text-lg font-extrabold tracking-tight transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
+          >
             <span className="text-rent">break</span>
             <span className="text-buy">Even</span>
-          </span>
+          </a>
           <span className="hidden text-sm text-muted sm:inline">rent vs. buy, with the math shown</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
