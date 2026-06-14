@@ -145,6 +145,22 @@ function pageFor(id: string, d: Card): string {
     .replaceAll(DESC_DEFAULT, esc(desc));
 }
 
+// A per-ZIP page so /<zip> resolves to a real static file (200, like the metro pages, since
+// Vercel's cleanUrls serves them and the SPA catch-all rewrite does not fire for misses) and
+// unfurls with that ZIP's own verdict in the title/description. noindex keeps these ~8k thin
+// pages out of search; they exist for routing and link sharing, not SEO. The OG image stays
+// the generic card for now (per-ZIP card images are served on demand, not baked for all 8k).
+function zipPageFor(zip: string, d: Card): string {
+  const sub = d.word === "Toss-up" ? "too close to call" : d.word === "Rent" ? "renting wins" : "buying wins";
+  const title = `Rent vs. buy in ${d.metro} (ZIP ${zip}): ${sub}`;
+  const desc = `${d.takeaway} ${d.homePrice} home, live data, the math shown.`;
+  return template
+    .replace("</head>", '<meta name="robots" content="noindex" />\n  </head>')
+    .replaceAll(`"${SITE}/"`, `"${SITE}/${zip}"`)
+    .replaceAll(TITLE_DEFAULT, esc(title))
+    .replaceAll(DESC_DEFAULT, esc(desc));
+}
+
 let n = 0;
 for (const loc of locations as LocationData[]) {
   if (loc.id === "united-states") continue; // the root page already covers the national view
@@ -154,6 +170,26 @@ for (const loc of locations as LocationData[]) {
   n++;
 }
 
+// Per-ZIP pages: one static shell per ZIP in zips.json, so /<zip> resolves and unfurls with
+// the ZIP's own numbers. Cheap (HTML + one engine run each, no PNG render), so all ~8k get a
+// page; the OG card image is the on-demand endpoint's job, not baked here.
+interface RawZip {
+  h: number;
+  r: number;
+  s: string;
+  c: string;
+}
+const zips = JSON.parse(readFileSync(new URL("../public/zips.json", import.meta.url), "utf8")) as Record<
+  string,
+  RawZip
+>;
+let zn = 0;
+for (const [zip, z] of Object.entries(zips)) {
+  const loc: LocationData = { id: `zip-${zip}`, metro: `${z.c}, ${z.s}`, state: z.s, homeValue: z.h, rent: z.r };
+  writeFileSync(new URL(`${zip}.html`, dist), zipPageFor(zip, cardFor(loc)));
+  zn++;
+}
+
 // /calc is client-routed too, so cleanUrls needs a calc.html shell (otherwise the clean
 // URL 404s before the SPA rewrite). Give it its own title; the generic OG image is fine.
 const calcHtml = template
@@ -161,4 +197,4 @@ const calcHtml = template
   .replaceAll(`"${SITE}/"`, `"${SITE}/calc"`);
 writeFileSync(new URL("calc.html", dist), calcHtml);
 
-console.log(`gen-og-pages: wrote ${n} metro pages + OG cards + calc.html to dist/`);
+console.log(`gen-og-pages: wrote ${n} metro pages + OG cards, ${zn} ZIP pages, calc.html to dist/`);
