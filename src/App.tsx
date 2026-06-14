@@ -1147,7 +1147,7 @@ function Sources({ market }: { market: MarketData }) {
     },
     {
       label: "Home prices & rents",
-      value: `Zillow ZHVI / ZORI asking rents (${market.national.asOf})`,
+      value: `Zillow ZHVI / single-family ZORI (${market.national.asOf})`,
       href: "https://www.zillow.com/research/data/",
     },
     {
@@ -1206,9 +1206,12 @@ function Sources({ market }: { market: MarketData }) {
         <p>
           Caveats: the SALT cap, standard deduction, and capital-gains brackets are simplified and change with
           tax law, so treat the deduction math as an estimate. Appreciation defaults to a conservative long-run figure
-          rather than recent local run-ups. The rent figure is Zillow ZORI, which tracks asking rents on newly-listed
-          units and runs ahead of what a tenant renewing in place pays, so in a hot market the default may be high.
-          Adjust any input to your own numbers. This is a decision aid, not financial advice.
+          rather than recent local run-ups. The rent figure is Zillow's single-family ZORI, what a comparable house
+          rents for, not the cheaper apartment-blended index, so the comparison is house against house. Zillow
+          publishes single-family rent for metros but not ZIPs, so a ZIP-refined rent is an estimate (its blended rent
+          scaled by that metro's single-family premium). ZORI tracks newly-listed asking rents, which run ahead of what
+          a tenant renewing in place pays, so in a hot market it may read high. Adjust any input to your own numbers.
+          This is a decision aid, not financial advice.
         </p>
         <p className="pt-2">
           Free and open source. Data refreshes automatically.{" "}

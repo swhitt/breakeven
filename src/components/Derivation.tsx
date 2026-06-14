@@ -200,7 +200,11 @@ export function Derivation({
               <Row
                 label="Comparable rent"
                 value={`${usd(inputs.monthlyRent)}/mo`}
-                source={`Zillow ZORI · ${place} · ${market.national.asOf}`}
+                source={
+                  activeZip
+                    ? `Zillow single-family ZORI (ZIP estimate) · ${place} · ${market.national.asOf}`
+                    : `Zillow single-family ZORI · ${place} · ${market.national.asOf}`
+                }
               />
               <Row
                 label={`Mortgage rate (${inputs.mortgageTermYears}yr)`}

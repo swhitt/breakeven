@@ -19,8 +19,8 @@
   },
   "national": {
     "homeValue": 368198,
-    "rent": 1930,
+    "rent": 2252,
     "asOf": "2026-04",
-    "source": "Zillow ZHVI/ZORI (US)"
+    "source": "Zillow ZHVI / single-family ZORI (US)"
   }
 }

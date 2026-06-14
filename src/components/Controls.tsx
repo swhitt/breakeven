@@ -279,7 +279,15 @@ export function Controls({
         <Field label="Home price" badge={<LiveBadge>Zillow {usd(activeZip ? activeZip.homeValue : selected.homeValue)}</LiveBadge>}>
           <MoneyInput value={inputs.homePrice} onChange={(n) => patch({ homePrice: n })} />
         </Field>
-        <Field label="Comparable rent" badge={<LiveBadge>Zillow {usd(activeZip ? activeZip.rent : selected.rent)}/mo</LiveBadge>}>
+        <Field
+          label="Comparable rent"
+          badge={
+            <LiveBadge>
+              Zillow {activeZip ? "est. " : ""}
+              {usd(activeZip ? activeZip.rent : selected.rent)}/mo
+            </LiveBadge>
+          }
+        >
           <MoneyInput value={inputs.monthlyRent} onChange={(n) => patch({ monthlyRent: n })} step={50} />
         </Field>
       </div>

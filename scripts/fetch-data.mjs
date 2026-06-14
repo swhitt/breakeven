@@ -33,9 +33,14 @@ const URLS = {
   zhvi:
     "https://files.zillowstatic.com/research/public_csvs/zhvi/" +
     "Metro_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
+  // Single-family ZORI, not the blended SFR+condo+multifamily index. This is a
+  // rent-vs-buy-a-house tool, and the blended index runs a median ~22% below true
+  // single-family rent (apartments drag it down), which silently tilts the verdict
+  // toward renting. Zillow publishes single-family ZORI at the metro+national level,
+  // so use it directly here. (ZIPs have no single-family ZORI; fetch-zips estimates it.)
   zori:
     "https://files.zillowstatic.com/research/public_csvs/zori/" +
-    "Metro_zori_uc_sfrcondomfr_sm_month.csv",
+    "Metro_zori_uc_sfr_sm_month.csv",
 };
 
 // Number of largest metros (by Zillow SizeRank) to emit in locations.json.
@@ -103,9 +108,9 @@ const DEFAULT_MARKET = {
   },
   national: {
     homeValue: 368000,
-    rent: 1930,
+    rent: 2252,
     asOf: "2026-04",
-    source: "Zillow ZHVI/ZORI (US)",
+    source: "Zillow ZHVI / single-family ZORI (US)",
   },
 };
 
@@ -115,7 +120,7 @@ const DEFAULT_LOCATIONS = [
     metro: "United States",
     state: "US",
     homeValue: 368000,
-    rent: 1930,
+    rent: 2252,
     appreciation5yr: 0.04,
   },
 ];
@@ -500,7 +505,7 @@ async function fetchZillow(existingMarket, existingLocations, summary) {
         homeValue: usHome,
         rent: rentUS != null ? Math.round(rentUS) : existingMarket.national.rent,
         asOf: zhviMonth(usHomeDate),
-        source: "Zillow ZHVI/ZORI (US)",
+        source: "Zillow ZHVI / single-family ZORI (US)",
       };
     }
     if (usAppr1 != null || usAppr5 != null) {
