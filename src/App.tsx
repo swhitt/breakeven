@@ -1251,6 +1251,102 @@ function Sources({ market }: { market: MarketData }) {
           </a>
         </p>
       </div>
+
+      <div className="mt-6 max-w-3xl">
+        <Disclosure summary="The formulas, in full">
+          <MethodologyFormulas />
+        </Disclosure>
+      </div>
     </footer>
+  );
+}
+
+// The actual math, for readers who want it. Faithful to src/engine/calculator.ts: monthly
+// simulation, present values discounted at the investment return, breakeven solved in closed
+// form. Kept behind a disclosure so the default page stays approachable.
+function Formula({ children }: { children: ReactNode }) {
+  return (
+    <div className="my-2 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[13px] text-ink">
+      {children}
+    </div>
+  );
+}
+
+function MethodologyFormulas() {
+  const sections: { title: string; body: ReactNode }[] = [
+    {
+      title: "Present value of any stream",
+      body: (
+        <>
+          Every monthly flow is discounted at <code className="text-ink">d = investmentReturn / 12</code>:
+          <Formula>PV = Σ flow_m / (1 + d)^m</Formula>
+          The down payment and closing costs sit at t = 0 (undiscounted); sale proceeds land at the horizon. Using your
+          return as the discount rate is deliberate: certain flows (the mortgage) and uncertain ones (appreciation) are
+          discounted alike, a known simplification.
+        </>
+      ),
+    },
+    {
+      title: "Breakeven rent, in closed form (not a search)",
+      body: (
+        <>
+          Renting's present cost is linear in the monthly rent r, since rent, the deposit, and the broker fee all scale
+          with it:
+          <Formula>PV_rent(r) = r · S + F</Formula>
+          S is the rent-proportional slope (discounted rent plus deposit and broker fee, less the deposit returned at
+          move-out); F is the fixed part (renters insurance). Buying's cost PV_buy does not depend on r, so the
+          breakeven rent is a single division:
+          <Formula>r* = (PV_buy - F) / S</Formula>
+        </>
+      ),
+    },
+    {
+      title: "Owning cost, four buckets",
+      body: (
+        <>
+          <Formula>PV_buy = (down + closing) + Σ (carry_m - taxBenefit_m)/(1+d)^m - saleProceeds/(1+d)^N</Formula>
+          carry_m is mortgage (principal + interest) + property tax + maintenance + insurance + HOA + PMI (while loan /
+          value &gt; 80%), each grown by inflation or appreciation. saleProceeds is the appreciated value less selling
+          costs, the remaining loan balance, and capital-gains tax after the IRC section 121 exclusion.
+        </>
+      ),
+    },
+    {
+      title: "Tax benefit (itemizing helps only on the excess)",
+      body: (
+        <>
+          <Formula>benefit = fedRate · max(0, deductibleInterest + saltUsed - standardDeduction)</Formula>
+          Interest is capped at the $750k acquisition-debt fraction (rising toward 100% as the loan amortizes under the
+          cap); saltUsed = min(property tax + state and local income tax, SALT cap). Valued at your federal marginal
+          rate, since it is a federal Schedule A deduction.
+        </>
+      ),
+    },
+    {
+      title: "Net worth if you sell and move out",
+      body: (
+        <>
+          The buyer's wealth is the sale proceeds (equity after selling costs and capital-gains tax). The renter invests
+          the difference:
+          <Formula>renterNetWorth = buyerNetWorth + (PV_buy - PV_rent) · (1 + d)^N</Formula>
+          the down payment plus every month's cash-flow gap, compounded at your return. By construction the wealth lines
+          cross the same year the cost lines do.
+        </>
+      ),
+    },
+  ];
+  return (
+    <div className="space-y-5 text-sm text-muted">
+      <p>
+        The engine is a pure function in <code className="text-ink">src/engine/calculator.ts</code>, simulated month by
+        month. Here is exactly what it computes.
+      </p>
+      {sections.map((s) => (
+        <div key={s.title}>
+          <div className="font-semibold text-ink">{s.title}</div>
+          <div className="mt-1">{s.body}</div>
+        </div>
+      ))}
+    </div>
   );
 }
