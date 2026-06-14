@@ -44,7 +44,12 @@ export async function fetchLiveMarket(): Promise<MarketData | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(`${CDN}/market.json`, { signal: ctrl.signal });
+    // jsDelivr serves this with cache-control: max-age=604800 (7 days), so without an override
+    // a returning visitor's browser pins a week-old copy and never sees a data refresh until it
+    // expires. no-store forces a fresh pull from jsDelivr's edge (which we purge on every
+    // refresh) each load. The payload is ~400 bytes, so the cost is nil, and a network failure
+    // still falls back to the build-time market.json bundled with the app.
+    const res = await fetch(`${CDN}/market.json`, { signal: ctrl.signal, cache: "no-store" });
     if (!res.ok) return null;
     const json: unknown = await res.json();
     return isMarket(json) ? json : null;
