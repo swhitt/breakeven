@@ -8,6 +8,7 @@ import { Derivation } from "./components/Derivation";
 import { Disclosure } from "./ui";
 import { yearsLabel, pct, usd } from "./lib/format";
 import { decodeShare, encodeShare } from "./lib/share";
+import { computeSensitivity, drivingFactor } from "./lib/sensitivity";
 import {
   cleanOverrides,
   diffOverrides,
@@ -140,6 +141,14 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
   }, [inputs]);
 
   const result = useMemo(() => calculate(inputsForCalc), [inputsForCalc]);
+
+  // The tornado data, computed once here so the chart and the plain-English "what your
+  // verdict leans on" callout read the exact same numbers.
+  const sensitivity = useMemo(
+    () => computeSensitivity(inputsForCalc, inputs.monthlyRent),
+    [inputsForCalc, inputs.monthlyRent],
+  );
+  const driver = drivingFactor(sensitivity);
 
   // A /metro deep-link gets a metro-specific tab title (the static HTML still carries
   // the generic one for crawlers until the per-metro prerender lands).
@@ -466,13 +475,29 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
 
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
               <h3 className="text-base font-bold">What actually moves the answer</h3>
+              {driver && (
+                <p className="mt-1 text-sm font-medium text-ink">
+                  {driver.flips ? (
+                    <>
+                      Your verdict leans hardest on{" "}
+                      <span className="font-semibold">{driver.label.toLowerCase()}</span>, the one assumption here that
+                      could flip it on its own.
+                    </>
+                  ) : (
+                    <>
+                      Even the widest swing, <span className="font-semibold">{driver.label.toLowerCase()}</span>,
+                      doesn't change the verdict over a realistic range, so this call is pretty robust.
+                    </>
+                  )}
+                </p>
+              )}
               <p className="mb-4 mt-1 text-sm text-muted">
                 Each bar swings one uncertain assumption across a realistic range and shows where the breakeven rent
                 lands. Left of your rent, buying wins; right of it, renting wins. The widest bars are what your verdict
                 hangs on, and any bar crossing your rent is an assumption that could flip it on its own.
               </p>
               <Suspense fallback={<div className="h-72 w-full sm:h-80" />}>
-                <SensitivityChart inputs={inputsForCalc} monthlyRent={inputs.monthlyRent} />
+                <SensitivityChart rows={sensitivity} monthlyRent={inputs.monthlyRent} />
               </Suspense>
             </div>
           </section>
