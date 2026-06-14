@@ -399,7 +399,7 @@ export function Controls({
             rateDigits={2}
             annualStep={250}
             homePrice={inputs.homePrice}
-            badge={<LiveBadge>{selected.state} avg</LiveBadge>}
+            badge={<LiveBadge>{(activeZip ? activeZip.state : selected.state)} avg</LiveBadge>}
           />
           <CostRow
             label="Maintenance / yr"
@@ -420,7 +420,7 @@ export function Controls({
             rateDigits={2}
             annualStep={100}
             homePrice={inputs.homePrice}
-            badge={<LiveBadge>{selected.state} avg</LiveBadge>}
+            badge={<LiveBadge>{(activeZip ? activeZip.state : selected.state)} avg</LiveBadge>}
           />
           <TaxRateControl inputs={inputs} patch={patch} />
           <SliderRow

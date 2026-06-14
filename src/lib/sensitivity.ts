@@ -6,8 +6,13 @@ import { pct } from "./format";
 // the assumptions your answer is most hostage to. This is the data behind the tornado
 // chart and the one-line "what your verdict leans on" callout, kept in one pure place
 // so both read identical numbers.
+// Only the numeric inputs are sweepable (lo/hi are numbers), so the key can't be a
+// CostBasis or boolean field. This catches a bad factor entry at the table, not three
+// calls deep inside calculate().
+type NumericKey = { [K in keyof CalcInputs]: CalcInputs[K] extends number ? K : never }[keyof CalcInputs];
+
 export interface Factor {
-  key: keyof CalcInputs;
+  key: NumericKey;
   label: string;
   lo: number;
   hi: number;
@@ -37,8 +42,9 @@ export function buildFactors(inp: CalcInputs): Factor[] {
 }
 
 /** Sweep every factor and sort widest-swing first (the tornado shape). calculate() is
- *  pure, so this is a couple-dozen cheap re-runs. */
-export function computeSensitivity(inputs: CalcInputs, monthlyRent: number): SensitivityRow[] {
+ *  pure, but this runs it ~12 times, so callers should keep it off the input hot path. */
+export function computeSensitivity(inputs: CalcInputs): SensitivityRow[] {
+  const monthlyRent = inputs.monthlyRent;
   return buildFactors(inputs)
     .map((factor) => {
       const loBreakeven = calculate({ ...inputs, [factor.key]: factor.lo }).breakevenRent;

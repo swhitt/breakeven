@@ -147,7 +147,9 @@ async function main() {
     n++;
   }
 
-  // Sort keys so the committed file diffs cleanly run-to-run.
+  // Reinsert keys in sorted order for deterministic, clean run-to-run diffs. (Note: JSON
+  // output isn't strictly lexical, V8 emits integer-like keys in numeric order first, then
+  // the leading-zero ZIPs, but the ordering is stable, which is all the diff needs.)
   const sorted = {};
   for (const k of Object.keys(out).sort()) sorted[k] = out[k];
   await writeFile(OUT_PATH, JSON.stringify(sorted));

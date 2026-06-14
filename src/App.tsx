@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { calculate, housingPaymentLines, type CalcInputs, type CalcResult } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
@@ -199,11 +199,11 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
   const result = useMemo(() => calculate(inputsForCalc), [inputsForCalc]);
 
   // The tornado data, computed once here so the chart and the plain-English "what your
-  // verdict leans on" callout read the exact same numbers.
-  const sensitivity = useMemo(
-    () => computeSensitivity(inputsForCalc, inputs.monthlyRent),
-    [inputsForCalc, inputs.monthlyRent],
-  );
+  // verdict leans on" callout read identical numbers. It runs ~12 full engine sweeps, so we
+  // defer it off the input hot path: dragging a slider updates the headline instantly and
+  // this settles just after, which is fine since both readers live below the fold.
+  const deferredInputs = useDeferredValue(inputsForCalc);
+  const sensitivity = useMemo(() => computeSensitivity(deferredInputs), [deferredInputs]);
   const driver = drivingFactor(sensitivity);
 
   // A ZIP refinement relabels the place to that ZIP's real city, so the headline, picker,
@@ -286,7 +286,16 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
   // edit) plus a label, so the picker and headline show the ZIP's real city instead of the
   // old metro name. Property tax stays on the metro's state rate but scales with the value.
   function selectZip(zip: string, data: ZipData) {
-    patch({ homePrice: data.homeValue, monthlyRent: data.rent });
+    // Re-point the rate-based costs and the SALT state to the ZIP's state (like
+    // selectLocation), so an out-of-state ZIP doesn't tax a CA home at TX rates. These ride
+    // as overrides too, so they persist, share, and get pruned on a metro switch. A
+    // flat-dollar figure the user typed is personal, so it's left alone.
+    const p: Partial<AppInputs> = { homePrice: data.homeValue, monthlyRent: data.rent, taxState: data.state };
+    const taxRate = propertyTax[data.state];
+    const insRate = insurance[data.state];
+    if (inputs.propertyTax.kind === "pctOfValue" && taxRate != null) p.propertyTax = { kind: "pctOfValue", rate: taxRate };
+    if (inputs.homeInsurance.kind === "pctOfValue" && insRate != null) p.homeInsurance = { kind: "pctOfValue", rate: insRate };
+    patch(p);
     const z: ActiveZip = { zip, city: data.city, state: data.state, homeValue: data.homeValue, rent: data.rent };
     setActiveZip(z);
     if (!shareActive.current) saveActiveZip(z);
@@ -487,7 +496,6 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
                 <button
                   type="button"
                   onClick={reset}
-                  aria-live="polite"
                   title="Reset to your location's defaults"
                   className={
                     "inline-flex items-center gap-1 text-xs font-medium transition-colors " +
@@ -765,8 +773,8 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
             {closeCall
               ? "Basically a wash, sensitive to your assumptions."
               : renting
-                ? `Your rent is ${usd(diff)}/mo under the break-even rent, so renting's cheaper.`
-                : `Your rent is ${usd(diff)}/mo over the break-even rent, so buying's cheaper.`}
+                ? `Your rent is ${usd(diff)}/mo under the breakeven rent, so renting's cheaper.`
+                : `Your rent is ${usd(diff)}/mo over the breakeven rent, so buying's cheaper.`}
           </p>
           <p className="mt-3 border-t border-line pt-3 text-sm text-muted">
             <span className="font-semibold text-ink">{usd(buyUpfront)}</span> in cash to buy today
