@@ -29,6 +29,11 @@ const USER_AGENT = "breakeven-data-fetch/1.0 (+https://github.com/swhitt/breakev
 // ---------------------------------------------------------------------------
 const URLS = {
   pmms: "https://www.freddiemac.com/pmms/docs/PMMS_history.csv",
+  // Optimal Blue OBMMI (via FRED, free CSV, no key): jumbo and conforming 30yr lock-rate
+  // indices. We take the same-day jumbo-minus-conforming spread, so the level difference
+  // versus PMMS cancels, and apply it to the PMMS conforming rate for jumbo loans.
+  obmmiJumbo: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=OBMMIJUMBO30YF",
+  obmmiConforming: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=OBMMIC30YF",
   bls: "https://api.bls.gov/publicAPI/v2/timeseries/data/",
   zhvi:
     "https://files.zillowstatic.com/research/public_csvs/zhvi/" +
@@ -98,7 +103,7 @@ const INSURANCE = {
 // ---------------------------------------------------------------------------
 const DEFAULT_MARKET = {
   asOf: "2026-06-12",
-  mortgage: { rate30: 0.0652, rate15: 0.0584, asOf: "2026-06-11", source: "Freddie Mac PMMS" },
+  mortgage: { rate30: 0.0652, rate15: 0.0584, jumboSpread: 0.0008, asOf: "2026-06-11", source: "Freddie Mac PMMS" },
   inflation: { rate: 0.0425, asOf: "2026-05", source: "BLS CPI-U (CUUR0000SA0), YoY" },
   appreciation: {
     rate1yr: 0.03,
@@ -260,6 +265,39 @@ async function fetchMortgage(existing, summary) {
   } catch (err) {
     console.warn(`[warn] Freddie Mac PMMS failed: ${err.message}, keeping existing value`);
     summary.push(`mortgage: fell back (rate30=${existing.rate30})`);
+    return existing;
+  }
+}
+
+// Latest usable value in a FRED CSV (header: observation_date,SERIES; gaps are ".").
+function latestFredValue(text) {
+  const rows = parseCsv(text);
+  for (let r = rows.length - 1; r >= 1; r--) {
+    const v = (rows[r][1] || "").trim();
+    if (v && v !== "." && !Number.isNaN(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+// SOURCE 1b: jumbo-minus-conforming rate spread, from Optimal Blue's OBMMI indices on FRED.
+// Both are percents off the same daily lock survey, so their difference is a clean spread we
+// can add to the PMMS conforming rate. Returns the prior spread on any failure (fault-tolerant
+// like every other source), so a FRED hiccup never breaks the build.
+async function fetchJumboSpread(existing, summary) {
+  try {
+    const [jumboText, confText] = await Promise.all([
+      fetchWithTimeout(URLS.obmmiJumbo).then((r) => r.text()),
+      fetchWithTimeout(URLS.obmmiConforming).then((r) => r.text()),
+    ]);
+    const jumbo = latestFredValue(jumboText);
+    const conforming = latestFredValue(confText);
+    if (jumbo == null || conforming == null) throw new Error("no usable OBMMI rows");
+    const spread = round4((jumbo - conforming) / 100);
+    summary.push(`jumboSpread: UPDATED ${spread} (OBMMI jumbo ${jumbo} - conforming ${conforming})`);
+    return spread;
+  } catch (err) {
+    console.warn(`[warn] OBMMI jumbo spread failed: ${err.message}, keeping existing value`);
+    summary.push(`jumboSpread: fell back (${existing ?? "n/a"})`);
     return existing;
   }
 }
@@ -634,11 +672,13 @@ async function main() {
   const summary = [];
 
   // Run independent fetches concurrently; each is internally fault-tolerant.
-  const [mortgage, inflation, zillow] = await Promise.all([
+  const [mortgage, jumboSpread, inflation, zillow] = await Promise.all([
     fetchMortgage(market.mortgage, summary),
+    fetchJumboSpread(market.mortgage.jumboSpread, summary),
     fetchInflation(market.inflation, summary),
     fetchZillow(market, existingLocations, summary),
   ]);
+  mortgage.jumboSpread = jumboSpread;
 
   const newMarket = {
     asOf: new Date().toISOString().slice(0, 10),

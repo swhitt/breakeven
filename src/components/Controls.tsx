@@ -348,11 +348,29 @@ export function Controls({
         onChange={(n) => patch({ mortgageRate: n })}
         format={(n) => pct(n, 2)}
         badge={<LiveBadge>Freddie Mac {pct(market.mortgage.rate30, 2)}</LiveBadge>}
-        hint={
-          inputs.homePrice * (1 - inputs.downPaymentPct) > CONFORMING_LOAN_LIMIT
-            ? `Your loan tops the ${usd(CONFORMING_LOAN_LIMIT)} conforming limit, so it's a jumbo loan. The rate shown is Freddie Mac's conforming average; a real jumbo quote can run higher or lower, so set your own if you have one.`
-            : undefined
-        }
+        hint={(() => {
+          const loan = inputs.homePrice * (1 - inputs.downPaymentPct);
+          if (loan <= CONFORMING_LOAN_LIMIT) return undefined;
+          const spread = market.mortgage.jumboSpread;
+          const base = inputs.mortgageTermYears === 15 ? market.mortgage.rate15 : market.mortgage.rate30;
+          const lead = `Your loan tops the ${usd(CONFORMING_LOAN_LIMIT)} conforming limit, so it's a jumbo loan, which trades at a different rate than the conforming average shown.`;
+          if (spread == null) return `${lead} Set your own rate if you have a jumbo quote.`;
+          const jumboRate = base + spread;
+          return (
+            <>
+              {lead} Jumbo currently runs about <span className="font-semibold text-ink">{pct(jumboRate, 2)}</span> (
+              {spread >= 0 ? "+" : ""}
+              {pct(spread, 2)} vs conforming, per Optimal Blue).{" "}
+              <button
+                type="button"
+                onClick={() => patch({ mortgageRate: jumboRate })}
+                className="font-semibold text-ink underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              >
+                Use it
+              </button>
+            </>
+          );
+        })()}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
