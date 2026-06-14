@@ -163,6 +163,9 @@ export function LocationPicker({
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
+                // Prevent the default so the trailing Enter activation doesn't land on the
+                // trigger (which we refocus on close) and immediately reopen the menu.
+                e.preventDefault();
                 // A resolved ZIP wins; otherwise pick the highlighted metro.
                 if (zipHit?.data) chooseZip(zipHit.zip, zipHit.data);
                 else if (results[active]) choose(results[active]);
