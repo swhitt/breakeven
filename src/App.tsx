@@ -834,15 +834,23 @@ const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
 // feedback without scrolling past every input first.
 function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const renting = result.verdict === "rent";
+  // A toss-up stays neutral (line border, surface fill, muted eyebrow) so the card chrome
+  // doesn't shout a winner the headline refuses to pick. Mirrors Hero and SimpleCalc.
+  const closeCall = isCloseCall(result, inputs);
   return (
     <div
       className={
         "flex items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-sm " +
-        (renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
+        (closeCall ? "border-line bg-surface" : renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
       }
     >
       <div>
-        <div className={"text-[11px] font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
+        <div
+          className={
+            "text-[11px] font-bold uppercase tracking-wide " +
+            (closeCall ? "text-muted" : renting ? "text-rent-text" : "text-buy-text")
+          }
+        >
           Verdict
         </div>
         <div className="text-lg font-extrabold">{verdictLabel(result, inputs)}</div>
@@ -867,12 +875,17 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
     <div
       className={
         "overflow-hidden rounded-2xl border shadow-sm " +
-        (renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
+        (closeCall ? "border-line bg-surface" : renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
       }
     >
       <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="p-5 sm:p-6">
-          <div className={"text-xs font-bold uppercase tracking-wide " + (renting ? "text-rent-text" : "text-buy-text")}>
+          <div
+            className={
+              "text-xs font-bold uppercase tracking-wide " +
+              (closeCall ? "text-muted" : renting ? "text-rent-text" : "text-buy-text")
+            }
+          >
             Verdict
           </div>
           <div className="mt-1 text-2xl font-extrabold">{verdictLabel(result, inputs)}</div>
