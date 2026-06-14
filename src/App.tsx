@@ -541,18 +541,16 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
         )}
       </h1>
       <p className="mt-3 max-w-2xl text-lg text-muted">
-        Buying only beats renting if a comparable home rents for more than{" "}
-        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>.{" "}
+        Renting and buying break even at a rent of{" "}
+        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>, and you're{" "}
+        {renting ? "under" : "over"} that at{" "}
+        <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>.{" "}
         {result.breakevenYear == null ? (
-          <>
-            At <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>, owning never catches up,
-            even over the longest horizon shown below.
-          </>
+          <>Owning never catches up here, even over the longest horizon below.</>
         ) : (
           <>
-            Stay longer than{" "}
-            <span className="font-semibold text-ink">{yearsLabel(result.breakevenYear)}</span> and the math flips
-            toward owning.
+            Buying pulls ahead after{" "}
+            <span className="font-semibold text-ink">{yearsLabel(result.breakevenYear)}</span>.
           </>
         )}
       </p>
@@ -613,11 +611,11 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
             {closeCall
               ? "Basically a wash, sensitive to your assumptions."
               : renting
-                ? `Your rent is about ${usd(diff)}/mo below the breakeven.`
-                : `Your rent is about ${usd(diff)}/mo above the breakeven.`}
+                ? `Your rent is ${usd(diff)}/mo under the break-even rent, so renting's cheaper.`
+                : `Your rent is ${usd(diff)}/mo over the break-even rent, so buying's cheaper.`}
           </p>
         </div>
-        <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buy wins above this" />
+        <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buying wins above this rent" />
         <Stat
           label="Breakeven horizon"
           value={result.breakevenYear == null ? "Never" : yearsLabel(result.breakevenYear)}

@@ -63,19 +63,18 @@ function cardFor(loc: LocationData): Card {
   const r = calculate(inputs);
   const closeCall = Math.abs(r.monthlyDifference) < inputs.monthlyRent * 0.05;
   const renting = r.verdict === "rent";
-  const breakeven = usd(r.breakevenRent);
+  const breakeven = `${usd(r.breakevenRent)}/mo`;
+  const rentStr = `${usd(inputs.monthlyRent)}/mo`;
   return {
     metro: loc.metro,
     word: closeCall ? "Toss-up" : renting ? "Rent" : "Buy",
     color: closeCall ? INK : renting ? RENT : BUY,
     takeaway: closeCall
-      ? `Basically a wash, within ${usd(Math.abs(r.monthlyDifference))}/mo of the breakeven.`
-      : renting
-        ? `Renting wins. Buying needs a comparable rent above ${breakeven}/mo to pull ahead.`
-        : `Buying wins. Your rent clears the ${breakeven}/mo breakeven, so owning is cheaper.`,
-    breakeven: `${breakeven}/mo`,
+      ? `Rent and buy break even near ${breakeven}, so your ${rentStr} is basically a coin flip.`
+      : `Rent and buy break even at a rent of ${breakeven}. At ${rentStr}, ${renting ? "renting" : "buying"} wins.`,
+    breakeven,
     homePrice: usd(inputs.homePrice),
-    rent: `${usd(inputs.monthlyRent)}/mo`,
+    rent: rentStr,
   };
 }
 
@@ -138,7 +137,7 @@ async function renderPng(d: Card): Promise<Buffer> {
 function pageFor(id: string, d: Card): string {
   const sub = d.word === "Toss-up" ? "too close to call" : d.word === "Rent" ? "renting wins" : "buying wins";
   const title = `Rent vs. buy in ${d.metro}: ${sub}`;
-  const desc = `${d.takeaway} Breakeven rent ${d.breakeven}, home ${d.homePrice}. Live data, the math shown.`;
+  const desc = `${d.takeaway} ${d.homePrice} home, live data, the math shown.`;
   return template
     .replaceAll(`${SITE}/og.png`, `${SITE}/og/${id}.png`)
     .replaceAll(`"${SITE}/"`, `"${SITE}/${id}"`)
