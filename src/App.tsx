@@ -266,12 +266,30 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
   // Copy a link that reproduces this exact view: the metro plus only the fields the
   // user changed from that metro's defaults (so the link stays short and re-derives
   // everything else from live data on open).
-  function share() {
+  async function share() {
+    const defaults = buildInputs(selected, market, propertyTax, insurance);
+    const o = diffOverrides(inputs, defaults);
+    const url = `${window.location.origin}${window.location.pathname}?s=${encodeShare({ m: selected.id, o })}`;
+    const verb = isCloseCall(result, inputs)
+      ? "it's basically a coin flip"
+      : result.verdict === "rent"
+        ? "renting wins"
+        : "buying wins";
+    const text = `Rent vs. buy in ${selected.metro}: at ${usd(inputs.monthlyRent)}/mo, ${verb}. Breakeven rent ${usd(result.breakevenRent)}/mo.`;
+
+    // On touch devices the OS share sheet beats a silent clipboard copy. On desktop we
+    // keep copying the bare link, which unfurls its own card when pasted into Discord,
+    // Slack, or iMessage (and a coarse-pointer Chromebook still gets the nicer sheet).
+    if (navigator.share && window.matchMedia?.("(pointer: coarse)").matches) {
+      try {
+        await navigator.share({ title: "Breakeven", text, url });
+      } catch {
+        /* user dismissed the share sheet, nothing to do */
+      }
+      return;
+    }
     try {
-      const defaults = buildInputs(selected, market, propertyTax, insurance);
-      const o = diffOverrides(inputs, defaults);
-      const url = `${window.location.origin}${window.location.pathname}?s=${encodeShare({ m: selected.id, o })}`;
-      void navigator.clipboard?.writeText(url);
+      await navigator.clipboard?.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
