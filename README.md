@@ -55,7 +55,7 @@ The fetcher ([`scripts/fetch-data.mjs`](scripts/fetch-data.mjs)) is zero-depende
 
 ## Engineering
 
-- **Pure engine, 90 unit tests.** [`calculator.ts`](src/engine/calculator.ts) is side-effect-free; the IRC interest cap, SALT taper, PMI drop-off, and net-worth crossover are all covered.
+- **Pure engine, 126 unit tests.** [`calculator.ts`](src/engine/calculator.ts) is side-effect-free; the IRC interest cap, SALT taper, PMI drop-off, and net-worth crossover are covered, alongside monotonicity invariants, the geo/ZIP lookups, and the input-building glue.
 - **No backend.** A static SPA. Geolocation and the data mirror are the only runtime calls, both keyless and fault-tolerant.
 - **Typed data, one source.** Market / location / rate JSON is typed once in [`rates.ts`](src/data/rates.ts); cost keys derive from the registry, so adding a cost extends the type instead of drifting from it.
 - **Prerendered for SEO + share.** Every metro and ZIP gets a static page with its own meta and Open Graph card, so `/houston-tx` and `/77002` unfurl with that location's verdict. A sitemap lists them all.
@@ -65,7 +65,7 @@ The fetcher ([`scripts/fetch-data.mjs`](scripts/fetch-data.mjs)) is zero-depende
 ```bash
 npm install
 npm run dev          # local dev server
-npm test             # engine + lib unit tests (90)
+npm test             # engine + lib unit tests (126)
 npm run typecheck    # fresh, full tsc
 npm run build        # production build to dist/ (incl. per-metro/ZIP prerender)
 npm run fetch-data   # refresh market + metro data (optional)
