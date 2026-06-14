@@ -210,4 +210,22 @@ const calcHtml = template
   .replaceAll(`"${SITE}/"`, `"${SITE}/calc"`);
 writeFileSync(new URL("calc.html", dist), calcHtml);
 
-console.log(`gen-og-pages: wrote ${n} metro pages + OG cards, ${zn} ZIP pages, calc.html to dist/`);
+// A sitemap of the indexable pages (root, the /calc quick mode, and every metro page) so
+// crawlers can actually reach the prerendered metro pages, which are otherwise reachable
+// only through JS-driven navigation. The ~8k noindex ZIP pages are deliberately left out.
+const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const sitemapUrls = [
+  `${SITE}/`,
+  `${SITE}/calc`,
+  ...(locations as LocationData[]).filter((l) => l.id !== "united-states").map((l) => `${SITE}/${l.id}`),
+];
+const sitemap =
+  '<?xml version="1.0" encoding="UTF-8"?>\n' +
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+  sitemapUrls.map((u) => `  <url><loc>${xmlEscape(u)}</loc><lastmod>${market.asOf}</lastmod></url>`).join("\n") +
+  "\n</urlset>\n";
+writeFileSync(new URL("sitemap.xml", dist), sitemap);
+
+console.log(
+  `gen-og-pages: wrote ${n} metro pages + OG cards, ${zn} ZIP pages, calc.html, sitemap.xml (${sitemapUrls.length} urls) to dist/`,
+);
