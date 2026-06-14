@@ -150,15 +150,28 @@ function pageFor(id: string, d: Card): string {
 // unfurls with that ZIP's own verdict in the title/description. noindex keeps these ~8k thin
 // pages out of search; they exist for routing and link sharing, not SEO. The card image is the
 // generic one for now (per-ZIP card images are a Blob job, see the OG backlog).
+// Manifest of ZIP -> Blob OG image URL, written by render-zip-og for the top-N ZIPs. The long
+// tail (and any run before the manifest exists) falls back to the generic card.
+const zipOg: Record<string, string> = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("../src/data/zipOg.json", import.meta.url), "utf8"));
+  } catch {
+    return {};
+  }
+})();
+
 function zipPageFor(zip: string, d: Card): string {
   const sub = d.word === "Toss-up" ? "too close to call" : d.word === "Rent" ? "renting wins" : "buying wins";
   const title = `Rent vs. buy in ${d.metro} (ZIP ${zip}): ${sub}`;
   const desc = `${d.takeaway} ${d.homePrice} home, live data, the math shown.`;
-  return template
+  const ogImage = zipOg[zip];
+  let html = template
     .replace("</head>", '<meta name="robots" content="noindex" />\n  </head>')
     .replaceAll(`"${SITE}/"`, `"${SITE}/${zip}"`)
     .replaceAll(TITLE_DEFAULT, esc(title))
     .replaceAll(DESC_DEFAULT, esc(desc));
+  if (ogImage) html = html.replaceAll(`${SITE}/og.png`, esc(ogImage));
+  return html;
 }
 
 let n = 0;

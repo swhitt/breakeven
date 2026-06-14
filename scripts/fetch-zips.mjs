@@ -86,6 +86,7 @@ function parseWide(text) {
   const header = rows[0];
   const idx = {
     regionName: header.indexOf("RegionName"),
+    sizeRank: header.indexOf("SizeRank"),
     state: header.indexOf("State"),
     stateName: header.indexOf("StateName"),
     city: header.indexOf("City"),
@@ -143,7 +144,10 @@ async function main() {
       if (/^[A-Z]{2}$/.test(sn)) state = sn;
     }
     const city = zhvi.idx.city >= 0 ? (row[zhvi.idx.city] || "").trim() : "";
-    out[zip] = { h: Math.round(home), r: rent, s: state, c: city };
+    // SizeRank (smaller = bigger market) lets us pick the top-N ZIPs most worth pre-rendering
+    // an OG card for. Default to a large rank so a missing value sorts last.
+    const k = zhvi.idx.sizeRank >= 0 ? Number(row[zhvi.idx.sizeRank]) : NaN;
+    out[zip] = { h: Math.round(home), r: rent, s: state, c: city, k: Number.isFinite(k) ? k : 999999 };
     n++;
   }
 
