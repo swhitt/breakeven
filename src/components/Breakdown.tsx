@@ -288,8 +288,17 @@ export function Breakdown({
                   </tr>
                   {isOpen && (
                     <tr className="border-b border-line/60 bg-surface/60">
-                      <td colSpan={8} className="px-3 py-3 text-left">
-                        <Detail y={y} pv={pv} />
+                      {/* The summary table scrolls horizontally on narrow screens (min-w-[680px]),
+                          which otherwise drags the expanded detail and its labels off-screen,
+                          leaving a column of unlabelled numbers. Pin the detail to the left of the
+                          scroll viewport and clamp it to the visible width (viewport minus the
+                          nested main + disclosure padding) so it stays fully readable without any
+                          horizontal scrolling. Past md the table fits, so revert to a normal
+                          full-width inline cell. */}
+                      <td colSpan={8} className="p-0 text-left">
+                        <div className="sticky left-0 w-[calc(100vw-66px)] px-3 py-3 sm:w-[calc(100vw-82px)] md:static md:w-full">
+                          <Detail y={y} pv={pv} />
+                        </div>
                       </td>
                     </tr>
                   )}
