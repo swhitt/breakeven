@@ -63,7 +63,7 @@ export function buildBreakdownCsv(ctx: CsvContext): string {
   const breakevenYear = result.breakevenYear == null ? "never" : String(result.breakevenYear);
 
   const meta: [string, string][] = [
-    ["Breakeven - Rent vs Buy", ""],
+    ["breakEven - Rent vs Buy", ""],
     ["Generated", generatedDate],
     ["Data as of", dataAsOf],
     ["Source", "https://breakeven.rent"],

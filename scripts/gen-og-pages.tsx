@@ -17,7 +17,7 @@ const MUTED = "#6b6a61";
 const PAPER = "#faf9f5";
 const RENT = "#0d9488";
 const BUY = "#ea580c";
-const TITLE_DEFAULT = "Breakeven: rent vs. buy, with the math shown";
+const TITLE_DEFAULT = "breakEven: rent vs. buy, with the math shown";
 const DESC_DEFAULT =
   "Rent-vs-buy with live mortgage rates, rents, and home prices, and a year-by-year breakdown of the math.";
 

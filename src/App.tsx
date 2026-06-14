@@ -451,7 +451,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     // Slack, or iMessage (and a coarse-pointer Chromebook still gets the nicer sheet).
     if (navigator.share && window.matchMedia?.("(pointer: coarse)").matches) {
       try {
-        await navigator.share({ title: "Breakeven", text, url });
+        await navigator.share({ title: "breakEven", text, url });
       } catch {
         /* user dismissed the share sheet, nothing to do */
       }
