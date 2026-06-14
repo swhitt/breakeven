@@ -1,6 +1,15 @@
-import { Fragment, useState } from "react";
-import { netOwningCost, RECURRING_COSTS, type YearRow } from "../engine/calculator";
+import { Fragment, useState, type ReactNode } from "react";
+import {
+  grossOwningCost,
+  netOwningCost,
+  RECURRING_COSTS,
+  type CalcResult,
+  type HorizonPoint,
+  type YearRow,
+} from "../engine/calculator";
+import type { AppInputs } from "../engine/defaults";
 import { usd } from "../lib/format";
+import { triggerCsvDownload } from "../lib/exportCsv";
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -16,44 +25,111 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function Detail({ y }: { y: YearRow }) {
-  const items: { label: string; value: number; good?: boolean; hint?: string }[] = [
-    { label: "Mortgage", value: y.mortgagePaid },
-    { label: "Interest", value: y.interestPaid },
-    { label: "Principal", value: y.principalPaid },
-    // Recurring carrying costs straight from the registry; zero ones (PMI/HOA) drop out.
-    ...RECURRING_COSTS.filter((c) => c.side === "buy" && y.costs[c.key] > 0).map((c) => ({
-      label: c.label,
-      value: y.costs[c.key],
-    })),
-    {
-      label: "Tax benefit",
-      value: y.taxBenefit,
-      good: true,
-      hint: "Federal tax saved by itemizing (mortgage interest + SALT) vs. the standard deduction.",
-    },
-    { label: "Home value", value: y.homeValue },
-    { label: "Loan balance", value: y.loanBalance },
-    { label: "Your equity", value: y.equity, good: true },
-    { label: "Rent (alternative)", value: y.rentPaid },
-  ];
+// One labelled figure in the expander. `sub` indents it as a child of the line above;
+// `good` tints it as wealth/credit; `strong` is the cluster's reconciling total.
+function Line({
+  label,
+  value,
+  sub,
+  good,
+  strong,
+  signed,
+  hint,
+}: {
+  label: string;
+  value: number;
+  sub?: boolean;
+  good?: boolean;
+  strong?: boolean;
+  signed?: boolean;
+  hint?: string;
+}) {
+  const text = signed ? (value <= 0 ? "text-buy-text" : "text-rent-text") : good ? "text-rent-text" : "text-ink";
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
-      {items.map((it) => (
-        <div key={it.label} className="flex items-baseline justify-between gap-3">
-          <dt className={"text-xs text-muted" + (it.hint ? " cursor-help" : "")} title={it.hint}>
-            {it.label}
-          </dt>
-          <dd className={"tnum text-sm font-medium " + (it.good ? "text-rent-text" : "text-ink")}>
-            {it.good && it.value > 0 ? `+${usd(it.value)}` : usd(it.value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className={"flex items-baseline justify-between gap-3 " + (sub ? "pl-3" : "")}>
+      <dt className={"text-xs " + (hint ? "cursor-help text-muted underline decoration-dotted" : "text-muted")} title={hint}>
+        {label}
+      </dt>
+      <dd className={"tnum text-sm " + (strong ? "font-bold " : "font-medium ") + text}>
+        {good && value > 0 ? `+${usd(value)}` : usd(value)}
+      </dd>
+    </div>
   );
 }
 
-export function Breakdown({ years }: { years: YearRow[] }) {
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">{title}</div>
+      <dl className="space-y-1.5">{children}</dl>
+    </div>
+  );
+}
+
+// The full audit trail for one year, grouped so each cluster reconciles to a visible column.
+function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
+  const buyCosts = RECURRING_COSTS.filter((c) => c.side === "buy" && y.costs[c.key] > 0);
+  return (
+    <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+      <Group title="Payment this year">
+        <Line label="Mortgage P&I" value={y.mortgagePaid} />
+        <Line label="Interest" value={y.interestPaid} sub />
+        <Line label="Principal (builds equity)" value={y.principalPaid} sub good />
+        {buyCosts.map((c) => (
+          <Line key={c.key} label={c.label} value={y.costs[c.key]} />
+        ))}
+        <Line
+          label="Tax benefit"
+          value={y.taxBenefit}
+          good
+          hint="Federal tax saved by itemizing (mortgage interest + SALT) vs. the standard deduction."
+        />
+        <Line label="Net cost to own" value={netOwningCost(y)} strong />
+      </Group>
+
+      <Group title="Tax detail">
+        <Line
+          label="Deductible interest"
+          value={y.deductibleInterest}
+          hint="Mortgage interest still deductible after the $750k acquisition-debt cap (rises toward 100% as the loan amortizes)."
+        />
+        <Line label="SALT used" value={y.saltUsed} hint="Property tax + other state/local tax counted, after the $10k SALT cap." />
+        <Line label="Gross cost (pre-tax-benefit)" value={grossOwningCost(y)} />
+      </Group>
+
+      <Group title="Position (end of year)">
+        <Line label="Home value" value={y.homeValue} />
+        <Line label="Loan balance" value={y.loanBalance} />
+        <Line label="Equity (before selling costs)" value={y.equity} good strong />
+      </Group>
+
+      <Group title="Cumulative (today's dollars)">
+        {pv && (
+          <>
+            <Line label="Cost to own so far" value={pv.buyNetCost} />
+            <Line label="Cost to rent so far" value={pv.rentNetCost} />
+            <Line label="Buy minus rent" value={pv.buyNetCost - pv.rentNetCost} signed strong />
+          </>
+        )}
+        <Line label="Rent paid this year" value={y.rentPaid} />
+      </Group>
+    </div>
+  );
+}
+
+export function Breakdown({
+  result,
+  inputs,
+  placeLabel,
+  placeId,
+  dataAsOf,
+}: {
+  result: CalcResult;
+  inputs: AppInputs;
+  placeLabel: string;
+  placeId: string;
+  dataAsOf: string;
+}) {
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const toggle = (year: number) =>
     setOpen((prev) => {
@@ -63,64 +139,151 @@ export function Breakdown({ years }: { years: YearRow[] }) {
       return next;
     });
 
+  const years = result.years;
+  const pvByYear = new Map(result.horizon.map((h) => [h.year, h]));
+  // Sums for the footer (flow columns only); the cumulative columns already carry running totals.
+  const totalOwn = years.reduce((s, y) => s + netOwningCost(y), 0);
+  const totalRent = years.reduce((s, y) => s + y.rentPaid, 0);
+  const last = years[years.length - 1];
+  const lastPv = last ? pvByYear.get(last.year) : undefined;
+
+  function download() {
+    triggerCsvDownload({
+      inputs,
+      result,
+      placeLabel,
+      placeId,
+      dataAsOf,
+      generatedDate: new Date().toISOString().slice(0, 10),
+    });
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <p className="mb-3 text-xs text-muted">Tap any year for the full line-by-line breakdown.</p>
-      <table className="tnum w-full min-w-[400px] border-collapse text-right text-sm">
-        <thead>
-          <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-            <th className="py-2 pr-3 text-left font-semibold">Year</th>
-            <th
-              className="cursor-help px-3 py-2 font-semibold"
-              title="Mortgage + property tax + maintenance + insurance + PMI/HOA, less the tax benefit."
-            >
-              Cost to own
-            </th>
-            <th className="px-3 py-2 font-semibold">Rent</th>
-            <th className="px-3 py-2 font-semibold">Your equity</th>
-            <th className="w-7" aria-hidden />
-          </tr>
-        </thead>
-        <tbody>
-          {years.map((y) => {
-            const isOpen = open.has(y.year);
-            return (
-              <Fragment key={y.year}>
-                <tr
-                  onClick={() => toggle(y.year)}
-                  className="group cursor-pointer border-b border-line/60 last:border-0 hover:bg-paper"
-                >
-                  <td className="py-2 pr-3 text-left font-semibold">{y.year}</td>
-                  <td className="px-3 py-2 text-ink">{usd(netOwningCost(y))}</td>
-                  <td className="px-3 py-2 text-muted">{usd(y.rentPaid)}</td>
-                  <td className="px-3 py-2 text-rent-text">{usd(y.equity)}</td>
-                  <td className="pr-1 text-right">
-                    <button
-                      type="button"
-                      aria-expanded={isOpen}
-                      aria-label={`Year ${y.year} breakdown`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggle(y.year);
-                      }}
-                      className="text-muted transition-colors hover:text-ink"
-                    >
-                      <Chevron open={isOpen} />
-                    </button>
-                  </td>
-                </tr>
-                {isOpen && (
-                  <tr className="border-b border-line/60 bg-surface/60">
-                    <td colSpan={5} className="px-3 py-3 text-left">
-                      <Detail y={y} />
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-muted">
+          Cumulative columns are in today's dollars. Tap any year for the full line-by-line math.
+        </p>
+        <button
+          type="button"
+          onClick={download}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-ink"
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 3v10m0 0l-4-4m4 4l4-4M4 17h12" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Download CSV
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="tnum w-full min-w-[680px] border-collapse text-right text-sm">
+          <thead>
+            <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+              <th className="py-2 pr-3 text-left font-semibold">Year</th>
+              <th
+                className="cursor-help px-3 py-2 font-semibold"
+                title="Mortgage + property tax + maintenance + insurance + PMI/HOA, less the tax benefit."
+              >
+                Cost to own
+              </th>
+              <th className="px-3 py-2 font-semibold">Rent</th>
+              <th className="cursor-help px-3 py-2 font-semibold" title="Cumulative cost of owning so far, in today's dollars.">
+                Own so far
+              </th>
+              <th className="cursor-help px-3 py-2 font-semibold" title="Cumulative cost of renting so far, in today's dollars.">
+                Rent so far
+              </th>
+              <th
+                className="cursor-help px-3 py-2 font-semibold"
+                title="Owning minus renting, cumulative in today's dollars. When it crosses below zero, buying has overtaken renting."
+              >
+                Buy &minus; rent
+              </th>
+              <th className="px-3 py-2 font-semibold">Equity</th>
+              <th className="w-7" aria-hidden />
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((y) => {
+              const isOpen = open.has(y.year);
+              const pv = pvByYear.get(y.year);
+              const delta = pv ? pv.buyNetCost - pv.rentNetCost : 0;
+              const isBreakeven = result.breakevenYear === y.year;
+              return (
+                <Fragment key={y.year}>
+                  <tr
+                    onClick={() => toggle(y.year)}
+                    className={
+                      "group cursor-pointer border-b border-line/60 hover:bg-paper " +
+                      (isBreakeven ? "border-l-2 border-l-buy bg-buy-soft/30" : "")
+                    }
+                  >
+                    <td className="py-2 pr-3 text-left font-semibold">
+                      <span className="inline-flex items-center gap-1.5">
+                        {y.year}
+                        {isBreakeven && (
+                          <span className="rounded bg-buy/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-buy-text">
+                            breakeven
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-ink">{usd(netOwningCost(y))}</td>
+                    <td className="px-3 py-2 text-muted">{usd(y.rentPaid)}</td>
+                    <td className="px-3 py-2 text-muted">{pv ? usd(pv.buyNetCost) : "-"}</td>
+                    <td className="px-3 py-2 text-muted">{pv ? usd(pv.rentNetCost) : "-"}</td>
+                    <td className={"px-3 py-2 font-medium " + (delta <= 0 ? "text-buy-text" : "text-rent-text")}>
+                      {pv ? usd(delta) : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-rent-text">{usd(y.equity)}</td>
+                    <td className="pr-1 text-right">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-label={`Year ${y.year} breakdown`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggle(y.year);
+                        }}
+                        className="text-muted transition-colors hover:text-ink"
+                      >
+                        <Chevron open={isOpen} />
+                      </button>
                     </td>
                   </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                  {isOpen && (
+                    <tr className="border-b border-line/60 bg-surface/60">
+                      <td colSpan={8} className="px-3 py-3 text-left">
+                        <Detail y={y} pv={pv} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-line text-xs font-semibold uppercase tracking-wide">
+              <td className="py-2 pr-3 text-left text-muted">Total</td>
+              <td className="px-3 py-2 text-ink">{usd(totalOwn)}</td>
+              <td className="px-3 py-2 text-ink">{usd(totalRent)}</td>
+              <td className="px-3 py-2 text-muted">{lastPv ? usd(lastPv.buyNetCost) : "-"}</td>
+              <td className="px-3 py-2 text-muted">{lastPv ? usd(lastPv.rentNetCost) : "-"}</td>
+              <td
+                className={
+                  "px-3 py-2 " +
+                  (lastPv && lastPv.buyNetCost - lastPv.rentNetCost <= 0 ? "text-buy-text" : "text-rent-text")
+                }
+              >
+                {lastPv ? usd(lastPv.buyNetCost - lastPv.rentNetCost) : "-"}
+              </td>
+              <td className="px-3 py-2 text-rent-text">{last ? usd(last.equity) : "-"}</td>
+              <td aria-hidden />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }

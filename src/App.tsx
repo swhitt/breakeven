@@ -206,7 +206,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // interest / property tax too) is intentionally NOT modeled. It errs slightly
   // toward renting, consistent with the conservative defaults. Don't "fix" this by
   // passing est.combined into marginalTaxRate: that double-counts against the SALT base.
-  const inputsForCalc = useMemo<CalcInputs>(() => {
+  const inputsForCalc = useMemo<AppInputs>(() => {
     if (!inputs.taxAuto || inputs.annualIncome <= 0) return inputs;
     const est = estimateMarginalRate(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
     const stateSalt = estimateStateIncomeTax(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
@@ -681,7 +681,13 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
             <Derivation inputs={inputs} result={result} market={market} selected={selected} activeZip={activeZip} />
           </Disclosure>
           <Disclosure summary="Year-by-year breakdown">
-            <Breakdown years={result.years} />
+            <Breakdown
+              result={result}
+              inputs={inputsForCalc}
+              placeLabel={activeZip ? `ZIP ${activeZip.zip} (${activeZip.city}, ${activeZip.state})` : selected.metro}
+              placeId={activeZip ? activeZip.zip : selected.id}
+              dataAsOf={market.asOf}
+            />
           </Disclosure>
         </div>
 
