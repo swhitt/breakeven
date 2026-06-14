@@ -11,6 +11,12 @@ import { LocationPicker, type ActiveZip } from "./LocationPicker";
 
 type Patch = (p: Partial<AppInputs>) => void;
 
+// 2026 FHFA baseline conforming loan limit (one-unit). A loan above this is a jumbo loan,
+// priced off a different rate than the conforming Freddie Mac PMMS average we show. High-cost
+// metros set a higher limit (up to $1,249,125), so this baseline is the conservative floor at
+// which to flag it. https://www.fhfa.gov/news/news-release/fhfa-announces-conforming-loan-limit-values-for-2026
+const CONFORMING_LOAN_LIMIT = 832_750;
+
 function SliderRow({
   label,
   value,
@@ -342,6 +348,11 @@ export function Controls({
         onChange={(n) => patch({ mortgageRate: n })}
         format={(n) => pct(n, 2)}
         badge={<LiveBadge>Freddie Mac {pct(market.mortgage.rate30, 2)}</LiveBadge>}
+        hint={
+          inputs.homePrice * (1 - inputs.downPaymentPct) > CONFORMING_LOAN_LIMIT
+            ? `Your loan tops the ${usd(CONFORMING_LOAN_LIMIT)} conforming limit, so it's a jumbo loan. The rate shown is Freddie Mac's conforming average; a real jumbo quote can run higher or lower, so set your own if you have one.`
+            : undefined
+        }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
