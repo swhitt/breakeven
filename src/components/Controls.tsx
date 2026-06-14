@@ -283,6 +283,21 @@ export function Controls({
       />
 
       <SliderRow
+        label="Investment return"
+        value={inputs.investmentReturn}
+        min={0}
+        max={0.12}
+        step={0.0025}
+        onChange={(n) => patch({ investmentReturn: n })}
+        format={(n) => pct(n, 1)}
+        hint={(() => {
+          const dp = inputs.homePrice * inputs.downPaymentPct;
+          const fv = dp * Math.pow(1 + inputs.investmentReturn, inputs.yearsToStay);
+          return `Your ${usd(dp)} down payment, invested instead, would grow to about ${usd(fv)} in ${inputs.yearsToStay} years, money buying has to beat. The single biggest lever: higher favors renting.`;
+        })()}
+      />
+
+      <SliderRow
         label="Mortgage rate"
         value={inputs.mortgageRate}
         min={0.02}
@@ -344,16 +359,6 @@ export function Controls({
                 "Long-run default. Recent local run-ups overstate the future."
               )
             }
-          />
-          <SliderRow
-            label="Investment return (opportunity cost)"
-            value={inputs.investmentReturn}
-            min={0}
-            max={0.12}
-            step={0.0025}
-            onChange={(n) => patch({ investmentReturn: n })}
-            format={(n) => pct(n, 1)}
-            hint="What your down payment would earn if invested instead, the single most important assumption. The default is a long-run nominal; a higher figure favors renting."
           />
           <SliderRow
             label="Rent growth"
