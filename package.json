@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "fetch-data": "node scripts/fetch-data.mjs",
+    "fetch-zips": "node scripts/fetch-zips.mjs",
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {

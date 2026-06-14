@@ -39,6 +39,12 @@ jobs:
       - name: Pull fresh market data
         run: npm run fetch-data
 
+      - name: Pull fresh zip data
+        # ~128MB Zillow download; non-fatal so a Zillow outage leaves the committed
+        # zips.json in place instead of failing the whole refresh.
+        continue-on-error: true
+        run: npm run fetch-zips
+
       - name: Commit refreshed data
         # Resilient push: if another run lands first, rebase and retry instead of
         # hard-failing, and never block the cache purge below.
@@ -46,7 +52,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/market.json src/data/history.json src/data/locations.json
+          git add src/data/market.json src/data/history.json src/data/locations.json public/zips.json
           if git diff --cached --quiet; then
             echo "No data changes to commit."
             exit 0
