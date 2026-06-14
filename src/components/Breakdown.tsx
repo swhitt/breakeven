@@ -214,7 +214,7 @@ export function Breakdown({
         <table className="tnum w-full min-w-[680px] border-collapse text-right text-sm">
           <thead>
             <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-              <th className="py-2 pr-3 text-left font-semibold">Year</th>
+              <th className="py-2 pl-3 pr-3 text-left font-semibold">Year</th>
               <th
                 className="cursor-help px-3 py-2 font-semibold"
                 title="Mortgage + property tax + maintenance + insurance + PMI/HOA, less the tax benefit."
@@ -253,7 +253,7 @@ export function Breakdown({
                       (isBreakeven ? "border-l-2 border-l-buy bg-buy-soft/30" : "")
                     }
                   >
-                    <td className="py-2 pr-3 text-left font-semibold">
+                    <td className="py-2 pl-3 pr-3 text-left font-semibold">
                       <span className="inline-flex items-center gap-1.5">
                         {y.year}
                         {isBreakeven && (
@@ -308,7 +308,7 @@ export function Breakdown({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-line text-xs font-semibold uppercase tracking-wide">
-              <td className="py-2 pr-3 text-left text-muted">Total</td>
+              <td className="py-2 pl-3 pr-3 text-left text-muted">Total</td>
               <td className="px-3 py-2 text-ink">{usd(totalOwn)}</td>
               <td className="px-3 py-2 text-ink">{usd(totalRent)}</td>
               <td className="px-3 py-2 text-muted">{lastPv ? usd(lastPv.buyNetCost) : "-"}</td>
