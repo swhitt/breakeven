@@ -9,7 +9,10 @@
 import { ImageResponse } from "@vercel/og";
 import { head, put } from "@vercel/blob";
 
-export const config = { runtime: "edge" };
+// Node (Fluid Compute), not edge: @vercel/blob pulls in undici/node:stream, which the edge
+// runtime rejects. @vercel/og renders fine on Node too. The default export is a Web-style
+// handler (Request -> Response), which Vercel's Node runtime supports.
+export const config = { runtime: "nodejs" };
 
 const INK = "#1a1a16";
 const MUTED = "#6b6a61";
@@ -54,7 +57,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export default async function handler(req: Request): Promise<Response> {
   try {
-    const { searchParams } = new URL(req.url);
+    // Base makes this robust whether the Node runtime hands us an absolute or relative url.
+    const { searchParams } = new URL(req.url, "https://breakeven.rent");
     const metro = searchParams.get("m") ?? "the U.S.";
     const word = searchParams.get("w") ?? "Toss-up"; // Rent | Buy | Toss-up
     const breakeven = searchParams.get("be") ?? "";
