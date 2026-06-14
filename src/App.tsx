@@ -166,6 +166,23 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
   );
   const driver = drivingFactor(sensitivity);
 
+  // Announce the verdict to screen readers, debounced ~600ms so dragging a slider
+  // doesn't fire a stream of interruptions: the polite region speaks once the numbers
+  // settle. (Sighted users already see the live headline update.)
+  const [announce, setAnnounce] = useState("");
+  useEffect(() => {
+    const word = isCloseCall(result, inputs)
+      ? "Basically a toss-up"
+      : result.verdict === "rent"
+        ? "Renting wins"
+        : "Buying wins";
+    const id = window.setTimeout(
+      () => setAnnounce(`${word}. Breakeven rent ${usd(result.breakevenRent)} a month.`),
+      600,
+    );
+    return () => window.clearTimeout(id);
+  }, [result, inputs]);
+
   // A /metro deep-link gets a metro-specific tab title (the static HTML still carries
   // the generic one for crawlers until the per-metro prerender lands).
   useEffect(() => {
@@ -367,6 +384,9 @@ export function App({ initialMetroSlug }: { initialMetroSlug?: string } = {}) {
       <Header market={market} />
 
       <main className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
+        <div aria-live="polite" className="sr-only">
+          {announce}
+        </div>
         <Hero metro={selected.metro} result={result} inputs={inputs} />
 
         {/* On mobile the controls stack above the results, so surface a one-line

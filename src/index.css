@@ -135,3 +135,13 @@ input[type="range"]::-moz-range-thumb {
   background: var(--color-surface);
   border: 2px solid var(--color-ink);
 }
+/* Touch devices: grow the whole row to a ~44px tap target while keeping the visible
+   track a thin 4px line (drawn as a centered gradient over a transparent box). The
+   thumb centers itself, so tapping anywhere on the row still grabs the slider. Desktop
+   keeps its compact 4px row. */
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 44px;
+    background: linear-gradient(var(--color-line), var(--color-line)) no-repeat center / 100% 4px;
+  }
+}
