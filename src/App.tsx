@@ -622,7 +622,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
           <section className="min-w-0 space-y-6">
             <Verdict result={result} inputs={inputs} />
 
-            <MonthlyPayment result={result} />
+            <MonthlyPayment result={result} inputs={inputs} />
 
             {/* Wealth first: what you're actually worth is the question people feel; the cost
                 views below explain how you get there. */}
@@ -926,7 +926,7 @@ function Verdict({ result, inputs }: { result: ReturnType<typeof calculate>; inp
 // Zillow-style payment breakdown, but netting out the federal tax benefit to a
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
 // The headline says what it is; the itemized lines live behind an expander.
-function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
+function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
   const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
@@ -937,6 +937,10 @@ function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
   const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
   const gross = pni + lines.reduce((s, l) => s + l.monthly, 0);
   const net = gross - taxBenefit;
+  // The comparison the whole app exists to make: this owning payment against the rent it
+  // replaces. Principal is still buried inside the owning figure, hence "before any equity".
+  const rent = inputs.monthlyRent;
+  const delta = net - rent;
   const rows: { label: string; value: number; credit?: boolean }[] = [
     { label: "Principal & interest", value: pni },
     ...lines.map((l) => ({ label: l.label, value: l.monthly })),
@@ -952,7 +956,27 @@ function MonthlyPayment({ result }: { result: ReturnType<typeof calculate> }) {
           <span className="text-base font-semibold text-muted">/mo</span>
         </div>
       </div>
-      <p className="mt-1 text-sm text-muted">
+      {rent > 0 && (
+        <p className="mt-1.5 text-sm text-muted">
+          {Math.abs(delta) < 15 ? (
+            <>
+              About the same monthly as renting (<span className="font-semibold text-ink">{usd(rent)}/mo</span>), before
+              you build any equity.
+            </>
+          ) : delta > 0 ? (
+            <>
+              <span className="font-semibold text-ink">{usd(delta)}/mo more</span> than renting (
+              <span className="font-semibold text-ink">{usd(rent)}/mo</span>), before you build any equity.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-ink">{usd(-delta)}/mo less</span> than renting (
+              <span className="font-semibold text-ink">{usd(rent)}/mo</span>), and you still build equity.
+            </>
+          )}
+        </p>
+      )}
+      <p className="mt-2 text-sm text-muted">
         Your all-in monthly housing payment (principal &amp; interest, property tax, insurance, plus any HOA and PMI) in
         year 1,
         {taxBenefit > 0 ? (
