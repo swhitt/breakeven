@@ -88,8 +88,6 @@ export interface CalcInputs {
  * rent-side cost like moving expenses) is a single entry here instead of a hand-
  * synced edit across the loop, the row shape, the chart buckets, and the table.
  */
-export type CostKey = "propertyTax" | "maintenance" | "insurance" | "hoa" | "pmi";
-
 export interface CostContext {
   homePrice: number;
   homeValue: number; // current (appreciated) value
@@ -99,15 +97,19 @@ export interface CostContext {
 }
 
 export interface RecurringCost {
-  key: CostKey;
+  // Widened to string so CostKey can be derived FROM the registry below; `as const` narrows
+  // each actual entry's key back to its literal, which is what makes up CostKey.
+  key: string;
   label: string;
   side: "buy" | "rent";
-  deductibleSALT?: boolean; // counts toward the SALT itemized base (capped)
-  inHousingPayment?: boolean; // part of the all-in monthly housing payment (excludes maintenance)
+  // Required (not optional) so every `as const` entry carries the key, which keeps the flag
+  // readable across the whole union instead of existing on only some members.
+  deductibleSALT: boolean; // counts toward the SALT itemized base (capped)
+  inHousingPayment: boolean; // part of the all-in monthly housing payment (excludes maintenance)
   monthly: (inp: CalcInputs, ctx: CostContext) => number;
 }
 
-export const RECURRING_COSTS: RecurringCost[] = [
+export const RECURRING_COSTS = [
   {
     key: "propertyTax",
     label: "Property tax",
@@ -120,12 +122,15 @@ export const RECURRING_COSTS: RecurringCost[] = [
     key: "maintenance",
     label: "Maintenance",
     side: "buy",
+    deductibleSALT: false,
+    inHousingPayment: false, // a budget reality, not part of the lender's payment
     monthly: (i, c) => monthlyCostFromBasis(i.maintenance, c.homeValue, c.inflationFactor),
   },
   {
     key: "insurance",
     label: "Insurance",
     side: "buy",
+    deductibleSALT: false,
     inHousingPayment: true,
     monthly: (i, c) => monthlyCostFromBasis(i.homeInsurance, c.homeValue, c.inflationFactor),
   },
@@ -134,6 +139,7 @@ export const RECURRING_COSTS: RecurringCost[] = [
     key: "hoa",
     label: "HOA / other",
     side: "buy",
+    deductibleSALT: false,
     inHousingPayment: true,
     monthly: (i, c) => i.hoaMonthly * c.inflationFactor,
   },
@@ -146,10 +152,16 @@ export const RECURRING_COSTS: RecurringCost[] = [
     key: "pmi",
     label: "PMI",
     side: "buy",
+    deductibleSALT: false,
     inHousingPayment: true,
     monthly: (i, c) => (c.loanBalance / c.homeValue > 0.8 ? (c.originalLoan * i.pmiRate) / 12 : 0),
   },
-];
+] as const satisfies readonly RecurringCost[];
+
+// The registry is the single source of truth for cost keys. Deriving CostKey from it means
+// adding an entry above extends the type, and Record<CostKey, ...> consumers (the year row,
+// COST_COLORS in the chart) fail to compile until they cover the new key.
+export type CostKey = (typeof RECURRING_COSTS)[number]["key"];
 
 const BUY_COSTS = RECURRING_COSTS.filter((c) => c.side === "buy");
 
