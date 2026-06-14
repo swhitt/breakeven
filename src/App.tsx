@@ -974,7 +974,7 @@ function Verdict({
 // Zillow-style payment breakdown, but netting out the federal tax benefit to a
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
 // The headline says what it is; the itemized lines live behind an expander.
-function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
+function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: AppInputs }) {
   const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
@@ -989,6 +989,11 @@ function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculat
   // replaces. Principal is still buried inside the owning figure, hence "before any equity".
   const rent = inputs.monthlyRent;
   const delta = net - rent;
+  // Affordability, for free: the front-end DTI lenders underwrite to (housing / gross income),
+  // using the gross housing payment and the income we may already have for the tax estimate.
+  // Null when no income is entered, so it stays out of the way until it's useful.
+  const income = inputs.annualIncome;
+  const dti = income > 0 ? gross / (income / 12) : null;
   const rows: { label: string; value: number; credit?: boolean }[] = [
     { label: "Principal & interest", value: pni },
     ...lines.map((l) => ({ label: l.label, value: l.monthly })),
@@ -1037,6 +1042,14 @@ function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculat
           " before any tax benefit: at these numbers itemizing doesn't beat the standard deduction, so there's nothing to net out."
         )}
       </p>
+      {dti != null && (
+        <p className={"mt-2 text-sm " + (dti > 0.28 ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted")}>
+          That payment is <span className="font-semibold">{pct(dti, 0)}</span> of your gross monthly income,{" "}
+          {dti > 0.28
+            ? "above the 28% lenders like to see go to housing, so it may stretch the budget."
+            : "comfortably within the 28% lenders like to see go to housing."}
+        </p>
+      )}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
