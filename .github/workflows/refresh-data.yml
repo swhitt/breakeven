@@ -45,6 +45,15 @@ jobs:
         continue-on-error: true
         run: npm run fetch-zips
 
+      - name: Re-render top-N ZIP OG cards to Blob
+        # Refreshes the per-ZIP OG card images for the top markets and rewrites the
+        # zip -> Blob URL manifest. Non-fatal: a failure leaves the committed manifest in
+        # place. Needs the Blob token as a repo secret (same value Vercel uses).
+        continue-on-error: true
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: npm run render-zip-og
+
       - name: Commit refreshed data
         # Resilient push: if another run lands first, rebase and retry instead of
         # hard-failing, and never block the cache purge below.
@@ -52,7 +61,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/market.json src/data/history.json src/data/locations.json public/zips.json
+          git add src/data/market.json src/data/history.json src/data/locations.json public/zips.json src/data/zipOg.json
           if git diff --cached --quiet; then
             echo "No data changes to commit."
             exit 0
