@@ -362,23 +362,24 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ homeAppreciation: n })}
             format={(n) => pct(n, 1)}
-            hint={
-              // With a ZIP active, `selected` is the base metro the ZIP was reached from, not
-              // the ZIP's location, so its 5yr run is irrelevant (and misleading, e.g. a Dallas
-              // figure while viewing a Massachusetts ZIP). We have no ZIP-level appreciation, so
-              // fall back to the generic note.
-              !activeZip && selected.appreciation5yr != null ? (
+            hint={(() => {
+              // Local 5yr home-value CAGR for the active place (the ZIP's own, or the metro's),
+              // offered as a one-tap alternative but never the default: recent local run-ups
+              // overstate the future, so the conservative anchor stays the starting point.
+              const localAppr = activeZip ? activeZip.appreciation5yr : selected.appreciation5yr;
+              const apprPlace = activeZip ? `ZIP ${activeZip.zip}` : selected.metro;
+              return localAppr != null ? (
                 <button
                   type="button"
-                  className="text-rent-text underline-offset-2 hover:underline"
-                  onClick={() => patch({ homeAppreciation: selected.appreciation5yr! })}
+                  className="text-left text-rent-text underline-offset-2 hover:underline"
+                  onClick={() => patch({ homeAppreciation: localAppr })}
                 >
-                  {selected.metro} ran {pct(selected.appreciation5yr, 1)}/yr the last 5 years (use it)
+                  {apprPlace} ran {pct(localAppr, 1)}/yr the last 5 years (use it). Recent run-ups overstate the future.
                 </button>
               ) : (
                 "Long-run default. Recent local run-ups overstate the future."
-              )
-            }
+              );
+            })()}
           />
           <SliderRow
             label="Rent growth"

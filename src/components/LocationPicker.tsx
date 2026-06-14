@@ -9,6 +9,7 @@ export interface ActiveZip {
   state: string;
   homeValue: number; // the ZIP's own Zillow figures, so the field badges reference them
   rent: number;
+  appreciation5yr?: number; // local 5yr home-value CAGR, offered as a one-tap alternative
 }
 
 export function LocationPicker({

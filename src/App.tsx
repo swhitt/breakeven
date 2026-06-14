@@ -102,7 +102,14 @@ function storedZip(): ActiveZip | null {
         typeof z.homeValue === "number" &&
         typeof z.rent === "number"
       ) {
-        return { zip: z.zip, city: z.city, state: z.state, homeValue: z.homeValue, rent: z.rent };
+        return {
+          zip: z.zip,
+          city: z.city,
+          state: z.state,
+          homeValue: z.homeValue,
+          rent: z.rent,
+          appreciation5yr: typeof z.appreciation5yr === "number" ? z.appreciation5yr : undefined,
+        };
       }
     }
   } catch {
@@ -344,7 +351,14 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     if (inputs.propertyTax.kind === "pctOfValue" && taxRate != null) p.propertyTax = { kind: "pctOfValue", rate: taxRate };
     if (inputs.homeInsurance.kind === "pctOfValue" && insRate != null) p.homeInsurance = { kind: "pctOfValue", rate: insRate };
     patch(p);
-    const z: ActiveZip = { zip, city: data.city, state: data.state, homeValue: data.homeValue, rent: data.rent };
+    const z: ActiveZip = {
+      zip,
+      city: data.city,
+      state: data.state,
+      homeValue: data.homeValue,
+      rent: data.rent,
+      appreciation5yr: data.appreciation5yr,
+    };
     setActiveZip(z);
     if (!shareActive.current) saveActiveZip(z);
     if (updateUrl) setPathSlug(zip);

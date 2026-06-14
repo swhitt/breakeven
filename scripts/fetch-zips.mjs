@@ -108,6 +108,37 @@ function latestVal(row, dateCols) {
   return null;
 }
 
+// Annualized home-value CAGR for a ZHVI row over ~5 years (60 months), or the longest
+// available span of at least 1 year if the ZIP's history is shorter. Null if it can't be
+// computed. This is offered in the UI as a one-tap alternative to the conservative default,
+// never auto-filled: recent local run-ups are a poor predictor of future appreciation.
+function appreciationCagr(row, dateCols) {
+  let li = -1;
+  let latest = null;
+  for (let i = dateCols.length - 1; i >= 0; i--) {
+    const raw = (row[dateCols[i]] || "").trim();
+    if (raw && !Number.isNaN(Number(raw))) {
+      li = i;
+      latest = Number(raw);
+      break;
+    }
+  }
+  if (li < 0 || !(latest > 0)) return null;
+  let bi = -1;
+  let back = null;
+  for (let i = Math.max(0, li - 60); i <= li - 12; i++) {
+    const raw = (row[dateCols[i]] || "").trim();
+    if (raw && !Number.isNaN(Number(raw))) {
+      bi = i;
+      back = Number(raw);
+      break;
+    }
+  }
+  if (bi < 0 || !(back > 0)) return null;
+  const c = Math.pow(latest / back, 12 / (li - bi)) - 1;
+  return Number.isFinite(c) ? Math.round(c * 10000) / 10000 : null;
+}
+
 async function main() {
   await mkdir(PUBLIC_DIR, { recursive: true });
 
@@ -147,7 +178,15 @@ async function main() {
     // SizeRank (smaller = bigger market) lets us pick the top-N ZIPs most worth pre-rendering
     // an OG card for. Default to a large rank so a missing value sorts last.
     const k = zhvi.idx.sizeRank >= 0 ? Number(row[zhvi.idx.sizeRank]) : NaN;
-    out[zip] = { h: Math.round(home), r: rent, s: state, c: city, k: Number.isFinite(k) ? k : 999999 };
+    const a = appreciationCagr(row, zhvi.dateCols);
+    out[zip] = {
+      h: Math.round(home),
+      r: rent,
+      s: state,
+      c: city,
+      k: Number.isFinite(k) ? k : 999999,
+      ...(a != null ? { a } : {}),
+    };
     n++;
   }
 

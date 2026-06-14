@@ -8,14 +8,16 @@ export interface ZipData {
   rent: number;
   state: string;
   city: string;
+  appreciation5yr?: number; // local 5yr home-value CAGR, when available
 }
 
-// Compact on-disk shape, terse keys to keep the file small: { "77002": { h, r, s, c } }.
+// Compact on-disk shape, terse keys to keep the file small: { "77002": { h, r, s, c, k, a } }.
 interface RawZip {
   h: number;
   r: number;
   s: string;
   c: string;
+  a?: number; // 5yr appreciation CAGR
 }
 
 let cache: Promise<Record<string, RawZip>> | null = null;
@@ -39,5 +41,5 @@ function load(): Promise<Record<string, RawZip>> {
 export async function lookupZip(zip: string): Promise<ZipData | null> {
   const table = await load();
   const z = table[zip];
-  return z ? { homeValue: z.h, rent: z.r, state: z.s, city: z.c } : null;
+  return z ? { homeValue: z.h, rent: z.r, state: z.s, city: z.c, appreciation5yr: z.a } : null;
 }
