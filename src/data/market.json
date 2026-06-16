@@ -1,5 +1,5 @@
 {
-  "asOf": "2026-06-14",
+  "asOf": "2026-06-16",
   "mortgage": {
     "rate30": 0.0652,
     "rate15": 0.0584,
@@ -13,15 +13,15 @@
     "source": "BLS CPI-U (CUUR0000SA0), YoY"
   },
   "appreciation": {
-    "rate1yr": 0.0061,
-    "rate5yrCagr": 0.0502,
-    "asOf": "2026-04",
+    "rate1yr": 0.0073,
+    "rate5yrCagr": 0.0466,
+    "asOf": "2026-05",
     "source": "Zillow ZHVI (US), CAGR"
   },
   "national": {
-    "homeValue": 368198,
-    "rent": 2252,
-    "asOf": "2026-04",
+    "homeValue": 370320,
+    "rent": 2291,
+    "asOf": "2026-05",
     "source": "Zillow ZHVI / single-family ZORI (US)"
   }
 }
