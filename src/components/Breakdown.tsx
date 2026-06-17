@@ -8,8 +8,10 @@ import {
   type YearRow,
 } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
+import { MORTGAGE_INTEREST_DEBT_CAP, SALT_CAP } from "../engine/taxConstants";
 import { usd } from "../lib/format";
 import { triggerCsvDownload } from "../lib/exportCsv";
+import { InfoTip } from "../ui";
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -47,8 +49,9 @@ function Line({
   const text = signed ? (value <= 0 ? "text-buy-text" : "text-rent-text") : good ? "text-rent-text" : "text-ink";
   return (
     <div className={"flex items-baseline justify-between gap-3 " + (sub ? "pl-3" : "")}>
-      <dt className={"text-xs " + (hint ? "cursor-help text-muted underline decoration-dotted" : "text-muted")} title={hint}>
+      <dt className="flex items-center text-xs text-muted">
         {label}
+        {hint && <InfoTip text={hint} />}
       </dt>
       <dd className={"tnum text-sm " + (strong ? "font-bold " : "font-medium ") + text}>
         {good && value > 0 ? `+${usd(value)}` : usd(value)}
@@ -91,9 +94,13 @@ function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
         <Line
           label="Deductible interest"
           value={y.deductibleInterest}
-          hint="Mortgage interest still deductible after the $750k acquisition-debt cap (rises toward 100% as the loan amortizes)."
+          hint={`Mortgage interest still deductible after the ${usd(MORTGAGE_INTEREST_DEBT_CAP)} acquisition-debt cap (rises toward 100% as the loan amortizes).`}
         />
-        <Line label="SALT used" value={y.saltUsed} hint="Property tax + other state/local tax counted, after the $10k SALT cap." />
+        <Line
+          label="SALT used"
+          value={y.saltUsed}
+          hint={`Property tax + other state/local tax counted, after the SALT cap (${usd(SALT_CAP)} now, stepping down in later years).`}
+        />
         <Line label="Gross cost (pre-tax-benefit)" value={grossOwningCost(y)} />
       </Group>
 
@@ -169,7 +176,8 @@ export function Breakdown({
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs text-muted">
-          Cumulative columns are in today's dollars. Tap any year for the full line-by-line math.
+          Cumulative columns are in today's dollars. Tap any year for the full line-by-line math.{" "}
+          <span className="md:hidden">Scroll the table sideways to see every column.</span>
         </p>
         <button
           type="button"
@@ -210,29 +218,36 @@ export function Breakdown({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="tnum w-full min-w-[680px] border-collapse text-right text-sm">
+      <div className="relative">
+        <div className="overflow-x-auto">
+          <table className="tnum w-full min-w-[680px] border-collapse text-right text-sm">
           <thead>
             <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
               <th className="py-2 pl-3 pr-3 text-left font-semibold">Year</th>
-              <th
-                className="cursor-help px-3 py-2 font-semibold"
-                title="Mortgage + property tax + maintenance + insurance + PMI/HOA, less the tax benefit."
-              >
-                Cost to own
+              <th className="px-3 py-2 font-semibold">
+                <span className="inline-flex items-center">
+                  Cost to own
+                  <InfoTip text="Mortgage + property tax + maintenance + insurance + PMI/HOA, less the tax benefit." />
+                </span>
               </th>
               <th className="px-3 py-2 font-semibold">Rent</th>
-              <th className="cursor-help px-3 py-2 font-semibold" title="Cumulative cost of owning so far, in today's dollars.">
-                Own so far
+              <th className="px-3 py-2 font-semibold">
+                <span className="inline-flex items-center">
+                  Own so far
+                  <InfoTip text="Cumulative cost of owning so far, in today's dollars." />
+                </span>
               </th>
-              <th className="cursor-help px-3 py-2 font-semibold" title="Cumulative cost of renting so far, in today's dollars.">
-                Rent so far
+              <th className="px-3 py-2 font-semibold">
+                <span className="inline-flex items-center">
+                  Rent so far
+                  <InfoTip text="Cumulative cost of renting so far, in today's dollars." />
+                </span>
               </th>
-              <th
-                className="cursor-help px-3 py-2 font-semibold"
-                title="Owning minus renting, cumulative in today's dollars. When it crosses below zero, buying has overtaken renting."
-              >
-                Buy &minus; rent
+              <th className="px-3 py-2 font-semibold">
+                <span className="inline-flex items-center">
+                  Buy &minus; rent
+                  <InfoTip text="Owning minus renting, cumulative in today's dollars. When it crosses below zero, buying has overtaken renting." />
+                </span>
               </th>
               <th className="px-3 py-2 font-semibold">Equity</th>
               <th className="w-7" aria-hidden />
@@ -280,7 +295,7 @@ export function Breakdown({
                           e.stopPropagation();
                           toggle(y.year);
                         }}
-                        className="text-muted transition-colors hover:text-ink"
+                        className="-my-1 inline-flex items-center justify-center p-1.5 text-muted transition-colors hover:text-ink"
                       >
                         <Chevron open={isOpen} />
                       </button>
@@ -325,7 +340,15 @@ export function Breakdown({
               <td aria-hidden />
             </tr>
           </tfoot>
-        </table>
+          </table>
+        </div>
+        {/* On phones the table is wider than the screen; a right-edge fade signals there's more
+            to scroll to, so half-cut numbers at the edge don't read as a rendering bug. Hidden
+            once the table fits the column (md+). */}
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-surface to-transparent md:hidden"
+          aria-hidden
+        />
       </div>
     </div>
   );

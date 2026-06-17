@@ -188,21 +188,10 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
     >
       {auto ? (
         <div className="space-y-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted">Household income</span>
-              <MoneyInput
-                value={inputs.annualIncome}
-                onChange={(n) => patch({ annualIncome: n })}
-                step={5000}
-                placeholder="before tax"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted">State</span>
-              <StateSelect value={inputs.taxState} onChange={(s) => patch({ taxState: s })} />
-            </label>
-          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">State</span>
+            <StateSelect value={inputs.taxState} onChange={(s) => patch({ taxState: s })} />
+          </label>
           {hasIncome ? (
             <div className="rounded-lg border border-line bg-paper px-3 py-2 text-sm">
               <span className="tnum font-bold text-ink">{pct(est.federal, 1)}</span>{" "}
@@ -214,7 +203,8 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
             </div>
           ) : (
             <p className="text-xs text-muted">
-              Enter income to estimate your rate. Until then, {pct(inputs.marginalTaxRate, 0)} is assumed.
+              Add your household income up top to estimate your rate from it. Until then,{" "}
+              {pct(inputs.marginalTaxRate, 0)} is assumed.
             </p>
           )}
           <label className="block">
@@ -287,6 +277,7 @@ export function Controls({
         </Field>
         <Field
           label="Comparable rent"
+          hint="Auto-filled with the local typical rent for a similar home. Enter your own rent for a verdict about you."
           badge={
             <LiveBadge>
               Zillow {activeZip ? "est. " : ""}
@@ -297,6 +288,21 @@ export function Controls({
           <MoneyInput value={inputs.monthlyRent} onChange={(n) => patch({ monthlyRent: n })} step={50} />
         </Field>
       </div>
+
+      {/* Income lives up here, not buried in Advanced: it answers "can I afford this?" (the
+          affordability line under the payment) as much as it feeds the tax-benefit estimate. */}
+      <Field
+        label="Household income"
+        hint="Optional. Powers the affordability check below the payment, and your tax-benefit estimate in Advanced."
+      >
+        <MoneyInput
+          value={inputs.annualIncome}
+          onChange={(n) => patch({ annualIncome: n })}
+          step={5000}
+          placeholder="before tax (optional)"
+          ariaLabel="Household income"
+        />
+      </Field>
 
       <SliderRow
         label="Down payment"
@@ -335,7 +341,7 @@ export function Controls({
         hint={(() => {
           const dp = inputs.homePrice * inputs.downPaymentPct;
           const fv = dp * Math.pow(1 + inputs.investmentReturn, inputs.yearsToStay);
-          return `Your ${usd(dp)} down payment, invested instead, would grow to about ${usd(fv)} in ${inputs.yearsToStay} years, money buying has to beat. The single biggest lever: higher favors renting.`;
+          return `If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around ${pct(inputs.investmentReturn, 0)} is typical for a stock-heavy mix). Your ${usd(dp)} would grow to about ${usd(fv)} in ${inputs.yearsToStay} years, the return buying has to beat. It's the single biggest lever: higher favors renting.`;
         })()}
       />
 

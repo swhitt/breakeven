@@ -9,7 +9,8 @@ import { type ActiveZip } from "./components/LocationPicker";
 import { lookupZip, type ZipData } from "./lib/zips";
 import { Breakdown } from "./components/Breakdown";
 import { Derivation } from "./components/Derivation";
-import { Disclosure } from "./ui";
+import { Disclosure, InfoTip } from "./ui";
+import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP, saltCapForYear, TAX_YEAR } from "./engine/taxConstants";
 import { yearsLabel, pct, usd } from "./lib/format";
 import { freshness } from "./lib/freshness";
 import { decodeShare, encodeShare } from "./lib/share";
@@ -295,6 +296,14 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     selectedRef.current = selected.id;
   }, [selected]);
 
+  // Latest inputs, for handlers invoked from mount-only effects (popstate, the /zip lookup).
+  // Those effects capture first-render closures, so reading `inputs` directly there would see
+  // stale values; selectZip reads the current cost-basis kinds off this ref instead.
+  const inputsRef = useRef(inputs);
+  useEffect(() => {
+    inputsRef.current = inputs;
+  }, [inputs]);
+
   // Manual edits from the controls. Persist the ones we remember.
   const patch = (p: Partial<AppInputs>) => {
     touched.current = true;
@@ -349,8 +358,11 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     const p: Partial<AppInputs> = { homePrice: data.homeValue, monthlyRent: data.rent, taxState: data.state };
     const taxRate = propertyTax[data.state];
     const insRate = insurance[data.state];
-    if (inputs.propertyTax.kind === "pctOfValue" && taxRate != null) p.propertyTax = { kind: "pctOfValue", rate: taxRate };
-    if (inputs.homeInsurance.kind === "pctOfValue" && insRate != null) p.homeInsurance = { kind: "pctOfValue", rate: insRate };
+    // Read the current basis kinds off the ref, not the closure: a popstate/zip-deep-link
+    // call runs inside a mount-only effect that captured first-render inputs.
+    const cur = inputsRef.current;
+    if (cur.propertyTax.kind === "pctOfValue" && taxRate != null) p.propertyTax = { kind: "pctOfValue", rate: taxRate };
+    if (cur.homeInsurance.kind === "pctOfValue" && insRate != null) p.homeInsurance = { kind: "pctOfValue", rate: insRate };
     patch(p);
     const z: ActiveZip = {
       zip,
@@ -640,7 +652,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               <NetWorthChart
                 data={deferredResult.netWorth}
                 breakevenYear={deferredResult.breakevenYear}
-                yearsToStay={inputs.yearsToStay}
+                yearsToStay={deferredInputs.yearsToStay}
               />
             </ChartCard>
 
@@ -650,15 +662,15 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               note={
                 <>
                   Cumulative net cost in today's dollars, plotted as the gap between renting and buying. Below zero
-                  renting is ahead, above zero buying is. Where it crosses is the year buying takes the lead. Hover for
-                  the running total on each side.
+                  renting is ahead, above zero buying is. Where it crosses is the year buying takes the lead. Tap or hover
+                  for the running total on each side.
                 </>
               }
             >
               <AdvantageChart
                 data={deferredResult.horizon}
                 breakevenYear={deferredResult.breakevenYear}
-                yearsToStay={inputs.yearsToStay}
+                yearsToStay={deferredInputs.yearsToStay}
               />
             </ChartCard>
 
@@ -709,7 +721,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
                 </>
               }
             >
-              <SensitivityChart rows={sensitivity} monthlyRent={inputs.monthlyRent} />
+              <SensitivityChart rows={sensitivity} monthlyRent={deferredInputs.monthlyRent} />
             </ChartCard>
           </section>
         </div>
@@ -763,7 +775,7 @@ function Header({ market }: { market: MarketData }) {
         <div className="flex items-center gap-4 text-xs text-muted">
           {fresh.stale ? (
             <span
-              className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"
+              className="inline-flex items-center gap-1 font-medium text-warn-text"
               title={`Live data last refreshed ${fresh.asOf}. The weekly sync may have stalled, so these numbers could be out of date.`}
             >
               <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5">
@@ -795,7 +807,7 @@ function Header({ market }: { market: MarketData }) {
   );
 }
 
-function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
+function Hero({ metro, result, inputs }: { metro: string; result: CalcResult; inputs: AppInputs }) {
   const renting = result.verdict === "rent";
   // Honor the same close-call threshold the Verdict card and announcer use, so the giant
   // headline can't shout a winner while the card right below it reads "Toss-up".
@@ -848,12 +860,16 @@ function Hero({ metro, result, inputs }: { metro: string; result: ReturnType<typ
 // like a real rent-vs-buy advantage worth naming.
 const isCloseCall = (result: CalcResult, inputs: CalcInputs) =>
   Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
+
+// The conventional front-end (housing) ratio in the 28/36 underwriting rule of thumb: lenders
+// like housing costs to stay at or under 28% of gross monthly income.
+const DTI_FRONT_END_LIMIT = 0.28;
 const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
   isCloseCall(result, inputs) ? "Toss-up" : result.verdict === "rent" ? "Rent it" : "Buy it";
 
 // A one-line verdict for mobile, shown above the controls so there's immediate
 // feedback without scrolling past every input first.
-function CondensedVerdict({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: CalcInputs }) {
+function CondensedVerdict({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
   const renting = result.verdict === "rent";
   // A toss-up stays neutral (line border, surface fill, muted eyebrow) so the card chrome
   // doesn't shout a winner the headline refuses to pick. Mirrors Hero and SimpleCalc.
@@ -889,8 +905,8 @@ function Verdict({
   inputs,
   driver,
 }: {
-  result: ReturnType<typeof calculate>;
-  inputs: CalcInputs;
+  result: CalcResult;
+  inputs: AppInputs;
   driver: ReturnType<typeof drivingFactor>;
 }) {
   const renting = result.verdict === "rent";
@@ -961,7 +977,7 @@ function Verdict({
         <MiniStat
           label="Mortgage / mo"
           value={usd(result.monthlyPayment)}
-          title="Principal and interest only. Property tax, insurance, HOA, and PMI are on top, see the net effective monthly payment below."
+          hint="Principal and interest only. Property tax, insurance, HOA, and PMI are on top, see the net effective monthly payment below."
         />
         <MiniStat label="Loan amount" value={usd(result.loanAmount)} />
         <MiniStat label={`Buy total · ${inputs.yearsToStay}yr`} value={usd(result.buyNetCost)} />
@@ -974,10 +990,14 @@ function Verdict({
 // Zillow-style payment breakdown, but netting out the federal tax benefit to a
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
 // The headline says what it is; the itemized lines live behind an expander.
-function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculate>; inputs: AppInputs }) {
+// Takes the full AppInputs (not just the engine's CalcInputs) because the affordability line
+// reads annualIncome, a UI-only field that lives outside the pure engine contract.
+function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
   const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
+  // pni = principal & interest; gross = the all-in monthly housing payment; net = gross minus
+  // the Year-1 federal tax benefit. The headline shows net; affordability is judged on gross.
   const pni = result.monthlyPayment;
   const taxBenefit = y1.taxBenefit / 12;
   // Escrow-style carrying costs straight from the registry, so a new one flows into
@@ -989,11 +1009,16 @@ function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculat
   // replaces. Principal is still buried inside the owning figure, hence "before any equity".
   const rent = inputs.monthlyRent;
   const delta = net - rent;
-  // Affordability, for free: the front-end DTI lenders underwrite to (housing / gross income),
-  // using the gross housing payment and the income we may already have for the tax estimate.
-  // Null when no income is entered, so it stays out of the way until it's useful.
+  // Affordability, for free: the front-end (housing) DTI lenders underwrite to, gross housing
+  // payment over gross monthly income. Only meaningful with a financed purchase (there's a
+  // lender, and income is known), so it's null for an all-cash buy or before income is entered.
   const income = inputs.annualIncome;
-  const dti = income > 0 ? gross / (income / 12) : null;
+  const dti = income > 0 && result.loanAmount > 0 ? gross / (income / 12) : null;
+  // Round once and branch on the rounded value, so the shown percent and the over/under-28%
+  // verdict can't contradict each other at the boundary (27.6% would display "28%" but read
+  // as "comfortably under 28%").
+  const dtiPct = dti != null ? Math.round(dti * 100) : null;
+  const dtiOver = dtiPct != null && dtiPct > DTI_FRONT_END_LIMIT * 100;
   const rows: { label: string; value: number; credit?: boolean }[] = [
     { label: "Principal & interest", value: pni },
     ...lines.map((l) => ({ label: l.label, value: l.monthly })),
@@ -1042,12 +1067,18 @@ function MonthlyPayment({ result, inputs }: { result: ReturnType<typeof calculat
           " before any tax benefit: at these numbers itemizing doesn't beat the standard deduction, so there's nothing to net out."
         )}
       </p>
-      {dti != null && (
-        <p className={"mt-2 text-sm " + (dti > 0.28 ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted")}>
-          That payment is <span className="font-semibold">{pct(dti, 0)}</span> of your gross monthly income,{" "}
-          {dti > 0.28
-            ? "above the 28% lenders like to see go to housing, so it may stretch the budget."
-            : "comfortably within the 28% lenders like to see go to housing."}
+      {dtiPct != null && (
+        <p className={"mt-2 text-sm " + (dtiOver ? "font-medium text-warn-text" : "text-muted")}>
+          That payment is <span className="font-semibold">{dtiPct}%</span> of your gross monthly income,{" "}
+          {dtiOver
+            ? "above the 28% front-end ratio lenders like to see for housing, so it may stretch the budget (they also cap total debt, including car and card payments, nearer 36%)."
+            : "within the 28% front-end ratio lenders like to see for housing (they also weigh your other debts, capped nearer 36%)."}
+          {dtiOver && result.verdict === "rent" && (
+            <span className="font-normal text-muted">
+              {" "}
+              Renting also comes out ahead here, so stretching for this isn't buying you a better deal.
+            </span>
+          )}
         </p>
       )}
       <button
@@ -1100,14 +1131,12 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
   );
 }
 
-function MiniStat({ label, value, title }: { label: string; value: string; title?: string }) {
+function MiniStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="px-5 py-3">
-      <div
-        className={"text-[11px] font-medium uppercase tracking-wide text-muted" + (title ? " cursor-help" : "")}
-        title={title}
-      >
+      <div className="flex items-center text-[11px] font-medium uppercase tracking-wide text-muted">
         {label}
+        {hint && <InfoTip text={hint} />}
       </div>
       <div className="tnum text-sm font-bold">{value}</div>
     </div>
@@ -1170,13 +1199,15 @@ function Legend() {
 }
 
 function AdvantageLegend() {
+  // Triangles (up vs down) carry the meaning by shape as well as color, so the orange/teal pair
+  // stays legible for colorblind readers, and they echo the chart's above/below-the-line split.
   return (
     <div className="flex items-center gap-4 text-xs">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-2 w-2 rounded-sm bg-buy" /> Buying ahead
+        <span aria-hidden className="text-buy">&#9650;</span> Buying ahead
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-2 w-2 rounded-sm bg-rent" /> Renting ahead
+        <span aria-hidden className="text-rent">&#9660;</span> Renting ahead
       </span>
     </div>
   );
@@ -1276,7 +1307,9 @@ function Sources({ market }: { market: MarketData }) {
 
 // The actual math, for readers who want it. Faithful to src/engine/calculator.ts: monthly
 // simulation, present values discounted at the investment return, breakeven solved in closed
-// form. Kept behind a disclosure so the default page stays approachable.
+// form. Kept behind a disclosure so the default page stays approachable. The tax figures are
+// interpolated from src/engine/taxConstants.ts (not retyped here) so a law change updates the
+// panel automatically instead of leaving it quietly wrong.
 function Formula({ children }: { children: ReactNode }) {
   return (
     <div className="my-2 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[13px] text-ink">
@@ -1320,7 +1353,8 @@ function MethodologyFormulas() {
           <Formula>PV_buy = (down + closing) + Σ (carry_m - taxBenefit_m)/(1+d)^m - saleProceeds/(1+d)^N</Formula>
           carry_m is mortgage (principal + interest) + property tax + maintenance + insurance + HOA + PMI (while loan /
           value &gt; 80%), each grown by inflation or appreciation. saleProceeds is the appreciated value less selling
-          costs, the remaining loan balance, and capital-gains tax after the IRC section 121 exclusion.
+          costs, the remaining loan balance, and capital-gains tax after the IRC section 121 exclusion (
+          {usd(CAPITAL_GAINS_EXCLUSION.joint)} joint / {usd(CAPITAL_GAINS_EXCLUSION.single)} single).
         </>
       ),
     },
@@ -1329,9 +1363,10 @@ function MethodologyFormulas() {
       body: (
         <>
           <Formula>benefit = fedRate · max(0, deductibleInterest + saltUsed - standardDeduction)</Formula>
-          Interest is capped at the $750k acquisition-debt fraction (rising toward 100% as the loan amortizes under the
-          cap); saltUsed = min(property tax + state and local income tax, SALT cap). Valued at your federal marginal
-          rate, since it is a federal Schedule A deduction.
+          Interest is capped at the {usd(MORTGAGE_INTEREST_DEBT_CAP)} acquisition-debt fraction (rising toward 100% as
+          the loan amortizes under the cap); saltUsed = min(property tax + state and local income tax,{" "}
+          {usd(saltCapForYear(TAX_YEAR))} SALT cap, which steps down in later years under current law). Valued at your
+          federal marginal rate, since it is a federal Schedule A deduction.
         </>
       ),
     },

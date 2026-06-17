@@ -54,6 +54,32 @@ export function Field({
   );
 }
 
+/**
+ * A small "i" affordance that reveals an explanation. A real focusable <button> with the
+ * text mirrored into aria-label, so it's reachable by keyboard and screen readers (unlike a
+ * bare title=); the visual bubble appears on hover AND focus, and on tap (focus) for touch.
+ * The bubble drops downward so it isn't clipped by a horizontally-scrolling container.
+ */
+export function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group/tip relative ml-1 inline-flex align-middle">
+      <button
+        type="button"
+        aria-label={text}
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[9px] font-bold leading-none text-muted transition-colors hover:text-ink focus-visible:text-ink"
+      >
+        i
+      </button>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 w-56 max-w-[60vw] -translate-x-1/2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs font-normal normal-case leading-snug tracking-normal text-muted opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 /** Small pill that cites a live data value next to an input. */
 export function LiveBadge({ children }: { children: ReactNode }) {
   return (
@@ -182,7 +208,7 @@ export function Segmented<T extends string | number>({
   ariaLabel?: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-line bg-surface p-0.5" aria-label={ariaLabel}>
+    <div className="inline-flex rounded-lg border border-line bg-surface p-0.5" role="group" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={String(o.value)}

@@ -22,6 +22,10 @@
      The bright --color-rent/--color-buy stay for chart strokes and dots. */
   --color-rent-text: #0f766e;
   --color-buy-text: #c2410c;
+
+  /* Caution text (stale-data badge, affordability warning). Darkened amber so it
+     clears WCAG AA on the light paper background, where amber-600 (~3:1) fails. */
+  --color-warn-text: #b45309;
 }
 
 /*
@@ -44,6 +48,7 @@
   /* Dark theme already clears AA with the bright accents, so reuse them. */
   --color-rent-text: #2dd4bf;
   --color-buy-text: #fb923c;
+  --color-warn-text: #fbbf24;
 }
 
 @layer base {
