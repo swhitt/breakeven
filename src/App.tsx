@@ -3,13 +3,13 @@ import { calculate, housingPaymentLines, type CalcInputs, type CalcResult } from
 import { CHART_HEIGHT_CLASS } from "./components/chart/ChartFrame";
 import { useInView } from "./lib/useInView";
 import { buildInputs, type AppInputs } from "./engine/defaults";
-import { estimateMarginalRate, estimateStateIncomeTax } from "./engine/taxRates";
+import { estimateMarginalRate, estimateStateIncomeTax, estimateTakeHome } from "./engine/taxRates";
 import { Controls } from "./components/Controls";
 import { type ActiveZip } from "./components/LocationPicker";
 import { lookupZip, type ZipData } from "./lib/zips";
 import { Breakdown } from "./components/Breakdown";
 import { Derivation } from "./components/Derivation";
-import { Disclosure, InfoTip } from "./ui";
+import { Disclosure, InfoTip, MoneyInput } from "./ui";
 import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP, saltCapForYear, TAX_YEAR } from "./engine/taxConstants";
 import { yearsLabel, pct, usd } from "./lib/format";
 import { freshness } from "./lib/freshness";
@@ -636,6 +636,8 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
 
             <MonthlyPayment result={result} inputs={inputs} />
 
+            <Affordability result={result} inputs={inputs} patch={patch} />
+
             {/* Wealth first: what you're actually worth is the question people feel; the cost
                 views below explain how you get there. */}
             <ChartCard
@@ -861,9 +863,12 @@ function Hero({ metro, result, inputs }: { metro: string; result: CalcResult; in
 const isCloseCall = (result: CalcResult, inputs: CalcInputs) =>
   Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
 
-// The conventional front-end (housing) ratio in the 28/36 underwriting rule of thumb: lenders
-// like housing costs to stay at or under 28% of gross monthly income.
+// The conventional 28/36 underwriting rule of thumb: lenders like housing costs at or under 28%
+// of gross monthly income (front-end), and total debt (housing plus car/student/card payments)
+// at or under 36% (back-end). Many programs stretch the back-end to ~43%, but 36% is the
+// comfortable line the affordability panel measures against.
 const DTI_FRONT_END_LIMIT = 0.28;
+const DTI_BACK_END_LIMIT = 0.36;
 const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
   isCloseCall(result, inputs) ? "Toss-up" : result.verdict === "rent" ? "Rent it" : "Buy it";
 
@@ -989,10 +994,9 @@ function Verdict({
 
 // Zillow-style payment breakdown, but netting out the federal tax benefit to a
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
-// The headline says what it is; the itemized lines live behind an expander.
-// Takes the full AppInputs (not just the engine's CalcInputs) because the affordability line
-// reads annualIncome, a UI-only field that lives outside the pure engine contract.
-function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
+// The headline says what it is; the itemized lines live behind an expander. The
+// income/DTI side of affordability lives in the Affordability panel below, not here.
+function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcInputs }) {
   const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
@@ -1009,16 +1013,6 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInp
   // replaces. Principal is still buried inside the owning figure, hence "before any equity".
   const rent = inputs.monthlyRent;
   const delta = net - rent;
-  // Affordability, for free: the front-end (housing) DTI lenders underwrite to, gross housing
-  // payment over gross monthly income. Only meaningful with a financed purchase (there's a
-  // lender, and income is known), so it's null for an all-cash buy or before income is entered.
-  const income = inputs.annualIncome;
-  const dti = income > 0 && result.loanAmount > 0 ? gross / (income / 12) : null;
-  // Round once and branch on the rounded value, so the shown percent and the over/under-28%
-  // verdict can't contradict each other at the boundary (27.6% would display "28%" but read
-  // as "comfortably under 28%").
-  const dtiPct = dti != null ? Math.round(dti * 100) : null;
-  const dtiOver = dtiPct != null && dtiPct > DTI_FRONT_END_LIMIT * 100;
   const rows: { label: string; value: number; credit?: boolean }[] = [
     { label: "Principal & interest", value: pni },
     ...lines.map((l) => ({ label: l.label, value: l.monthly })),
@@ -1067,20 +1061,6 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInp
           " before any tax benefit: at these numbers itemizing doesn't beat the standard deduction, so there's nothing to net out."
         )}
       </p>
-      {dtiPct != null && (
-        <p className={"mt-2 text-sm " + (dtiOver ? "font-medium text-warn-text" : "text-muted")}>
-          That payment is <span className="font-semibold">{dtiPct}%</span> of your gross monthly income,{" "}
-          {dtiOver
-            ? "above the 28% front-end ratio lenders like to see for housing, so it may stretch the budget (they also cap total debt, including car and card payments, nearer 36%)."
-            : "within the 28% front-end ratio lenders like to see for housing (they also weigh your other debts, capped nearer 36%)."}
-          {dtiOver && result.verdict === "rent" && (
-            <span className="font-normal text-muted">
-              {" "}
-              Renting also comes out ahead here, so stretching for this isn't buying you a better deal.
-            </span>
-          )}
-        </p>
-      )}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -1117,6 +1097,163 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInp
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+// One labeled line in the income ledger: label left, dollar figure right. `negative` mutes it
+// and prefixes a minus (a deduction); `total` bolds it and sets it off under a divider (a subtotal).
+function LedgerRow({
+  label,
+  hint,
+  value,
+  negative,
+  total,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  negative?: boolean;
+  total?: boolean;
+}) {
+  return (
+    <div className={"flex items-baseline justify-between gap-3" + (total ? " border-t border-line/60 pt-2" : "")}>
+      <dt className={"text-sm " + (total ? "font-semibold text-ink" : "text-muted")}>
+        {label}
+        {hint && <span className="ml-1 font-normal text-muted">{hint}</span>}
+      </dt>
+      <dd className={"tnum text-sm font-semibold " + (negative ? "text-muted" : "text-ink")}>
+        {negative ? `-${value}` : value}
+      </dd>
+    </div>
+  );
+}
+
+// A housing / total-debt line with its DTI ratio underneath: amount on the right, then a small
+// caption naming the percent of gross income and whether it clears the 28%/36% line (amber if over).
+function RatioRow({
+  label,
+  hint,
+  amount,
+  pct: ratioPct,
+  over,
+  limit,
+  total,
+}: {
+  label: string;
+  hint?: string;
+  amount: string;
+  pct: number;
+  over: boolean;
+  limit: number;
+  total?: boolean;
+}) {
+  return (
+    <div className={total ? "border-t border-line/60 pt-2" : ""}>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className={"text-sm " + (total ? "font-semibold text-ink" : "text-muted")}>
+          {label}
+          {hint && <span className="ml-1 font-normal text-muted">{hint}</span>}
+        </dt>
+        <dd className="tnum text-sm font-semibold text-ink">{amount}/mo</dd>
+      </div>
+      <p className={"tnum mt-0.5 text-xs " + (over ? "font-medium text-warn-text" : "text-muted")}>
+        {ratioPct}% of gross income · {over ? `over the ${limit}% line` : `under the ${limit}% line`}
+      </p>
+    </div>
+  );
+}
+
+// A plain-language affordability walkthrough: gross income, what's left after estimated taxes, and
+// how the all-in housing payment (plus any other debt) sits against the 28% front-end and 36%
+// back-end ratios lenders underwrite to. Rendered only when an income is entered and the purchase
+// is financed (an all-cash buy has no lender ratio), so the default view stays uncluttered.
+function Affordability({
+  result,
+  inputs,
+  patch,
+}: {
+  result: CalcResult;
+  inputs: AppInputs;
+  patch: (p: Partial<AppInputs>) => void;
+}) {
+  const y1 = result.years[0];
+  const income = inputs.annualIncome;
+  if (!y1 || income <= 0 || result.loanAmount <= 0) return null;
+
+  // Gross PITI: the all-in housing payment lenders qualify against (before any tax benefit),
+  // built the same way as the payment card's gross figure.
+  const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
+  const housing = result.monthlyPayment + lines.reduce((s, l) => s + l.monthly, 0);
+
+  const grossMonthly = income / 12;
+  const { incomeTax, fica, takeHome } = estimateTakeHome(income, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
+  const takeHomeMonthly = takeHome / 12;
+
+  const debt = inputs.otherMonthlyDebt;
+  const totalDebt = housing + debt;
+  // Round once and branch on the rounded value so the shown percent and the over/under verdict
+  // agree at the boundary (a 28.4% that displays "28%" shouldn't also read as "over the line").
+  const frontPct = Math.round((housing / grossMonthly) * 100);
+  const backPct = Math.round((totalDebt / grossMonthly) * 100);
+  const frontOver = frontPct > DTI_FRONT_END_LIMIT * 100;
+  const backOver = backPct > DTI_BACK_END_LIMIT * 100;
+  const overGuideline = frontOver || backOver;
+  // The budget-side view lenders ignore: the share of actual take-home the housing payment eats.
+  const takeHomeShare = takeHomeMonthly > 0 ? Math.round((housing / takeHomeMonthly) * 100) : null;
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+      <h3 className="text-base font-bold">Can you afford it?</h3>
+      <p className="mt-1 text-sm text-muted">
+        What your income looks like after estimated taxes, and how the payment stacks up against the ratios lenders
+        underwrite to.
+      </p>
+
+      <dl className="mt-4 space-y-2">
+        <LedgerRow label="Gross monthly income" value={usd(grossMonthly)} />
+        <LedgerRow label="Income tax" hint="est." value={usd(incomeTax / 12)} negative />
+        <LedgerRow label="Payroll (FICA)" value={usd(fica / 12)} negative />
+        <LedgerRow label="Take-home" value={usd(takeHomeMonthly)} total />
+      </dl>
+
+      <dl className="mt-4 space-y-2 border-t border-line/60 pt-4">
+        <RatioRow label="Housing payment" hint="PITI" amount={usd(housing)} pct={frontPct} over={frontOver} limit={28} />
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-sm text-muted">
+            Other monthly debt<span className="ml-1 font-normal text-muted">car, loans, cards</span>
+          </dt>
+          <dd className="w-28 shrink-0">
+            <MoneyInput
+              value={debt}
+              onChange={(n) => patch({ otherMonthlyDebt: n })}
+              step={50}
+              placeholder="0"
+              ariaLabel="Other monthly debt"
+            />
+          </dd>
+        </div>
+        <RatioRow label="Total monthly debt" amount={usd(totalDebt)} pct={backPct} over={backOver} limit={36} total />
+      </dl>
+
+      <p className="mt-3 text-sm text-muted">
+        {overGuideline ? (
+          <>
+            <span className="font-medium text-warn-text">Above the 28/36 guideline</span> lenders like to see, so this
+            may stretch the budget.
+          </>
+        ) : (
+          <>Comfortably inside the 28/36 guideline lenders like to see.</>
+        )}
+        {takeHomeShare != null && <> The payment is {takeHomeShare}% of your take-home pay.</>}
+        {overGuideline && result.verdict === "rent" && (
+          <> Renting also comes out ahead here, so stretching for this isn't buying you a better deal.</>
+        )}
+      </p>
+      <p className="mt-2 text-xs text-muted">
+        Take-home is an estimate: federal, state, and local income tax plus employee FICA, assuming W-2 wages. Lenders
+        measure these ratios against gross income; the take-home line is just your budget's view. Not financial advice.
+      </p>
     </div>
   );
 }

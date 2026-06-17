@@ -41,6 +41,7 @@ const ref: AppInputs = {
   annualIncome: 0,
   taxState: "US",
   localTaxRate: 0,
+  otherMonthlyDebt: 0,
 };
 
 describe("coerceByKind", () => {

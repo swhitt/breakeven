@@ -25,6 +25,7 @@ export const PERSIST_SPEC = {
   annualIncome: "number",
   taxState: "string",
   localTaxRate: "number",
+  otherMonthlyDebt: "number",
 } as const satisfies Partial<Record<keyof AppInputs, FieldKind>>;
 
 export const PERSIST_KEYS = Object.keys(PERSIST_SPEC) as (keyof typeof PERSIST_SPEC)[];

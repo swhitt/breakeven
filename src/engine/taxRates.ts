@@ -165,3 +165,61 @@ export function estimateStateIncomeTax(
   const local = Number.isFinite(localRate) && localRate > 0 ? localRate * taxable : 0;
   return Math.round(stateTax + local);
 }
+
+/** Total annual federal income tax (bracket tax on income net of the standard deduction). */
+export function estimateFederalIncomeTax(income: number, filingJointly: boolean): number {
+  const status = filingJointly ? "joint" : "single";
+  const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
+  return Math.round(bracketTax(FEDERAL_BRACKETS[status], taxable));
+}
+
+/**
+ * FICA payroll tax, 2026. Social Security is 6.2% on wages up to the annual wage
+ * base; Medicare is 1.45% on all wages, plus the 0.9% Additional Medicare surtax
+ * on wages over $200k (single) / $250k (joint). ASSUMPTION: income is treated as
+ * W-2 wages and only the employee half is counted, so this is the salaried case.
+ * Self-employment doubles the SS/Medicare rates, and investment income pays
+ * neither, so take-home for those mixes is an over- or under-estimate respectively.
+ * Source: SSA 2026 wage base ($184,500); IRC 3101 rates.
+ */
+export const FICA = {
+  ssRate: 0.062,
+  ssWageBase: 184500,
+  medicareRate: 0.0145,
+  addlMedicareRate: 0.009,
+  addlMedicareThreshold: { single: 200000, joint: 250000 },
+} as const;
+
+/** Estimated annual employee FICA (Social Security + Medicare + Additional Medicare). */
+export function estimateFica(income: number, filingJointly: boolean): number {
+  const wages = Math.max(0, income);
+  const ss = FICA.ssRate * Math.min(wages, FICA.ssWageBase);
+  const threshold = filingJointly ? FICA.addlMedicareThreshold.joint : FICA.addlMedicareThreshold.single;
+  const medicare = FICA.medicareRate * wages + FICA.addlMedicareRate * Math.max(0, wages - threshold);
+  return Math.round(ss + medicare);
+}
+
+export interface TakeHomeEstimate {
+  incomeTax: number; // annual federal + state + local income tax
+  fica: number; // annual employee payroll tax
+  takeHome: number; // annual income less income tax and FICA
+}
+
+/**
+ * Estimated annual take-home pay: gross income less income tax (federal + state +
+ * local) and employee FICA. A budget-side companion to the deduction-valuation
+ * marginal rate; it always uses the bracket estimator (not the manual marginal
+ * slider, which only values the mortgage deduction). Same estimate caveats as the
+ * pieces it sums; not tax advice.
+ */
+export function estimateTakeHome(
+  income: number,
+  filingJointly: boolean,
+  stateCode: string,
+  localRate = 0,
+): TakeHomeEstimate {
+  const incomeTax = estimateFederalIncomeTax(income, filingJointly) + estimateStateIncomeTax(income, filingJointly, stateCode, localRate);
+  const fica = estimateFica(income, filingJointly);
+  const takeHome = Math.max(0, income - incomeTax - fica);
+  return { incomeTax, fica, takeHome };
+}

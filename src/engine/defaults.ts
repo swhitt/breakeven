@@ -14,8 +14,16 @@ export interface TaxEstimatorState {
   localTaxRate: number; // optional city/county income tax added onto the estimate
 }
 
+/**
+ * UI-only affordability state. Like the tax estimator, the engine never reads
+ * this; it feeds the take-home / DTI affordability panel only.
+ */
+export interface AffordabilityState {
+  otherMonthlyDebt: number; // recurring non-housing debt (car, student loans, min card payments), for back-end DTI
+}
+
 /** Everything the app holds in its input state: the engine contract plus UI state. */
-export type AppInputs = CalcInputs & TaxEstimatorState;
+export type AppInputs = CalcInputs & TaxEstimatorState & AffordabilityState;
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
@@ -67,6 +75,8 @@ export function buildInputs(
     annualIncome: 0,
     taxState: loc.state,
     localTaxRate: 0,
+
+    otherMonthlyDebt: 0,
 
     monthlyRent: loc.rent,
     rentGrowth: clamp(Math.max(market.inflation.rate, 0.03), 0.01, 0.06),
