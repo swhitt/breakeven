@@ -13,7 +13,7 @@ import {
 import type { NetWorthPoint } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 import { breakevenLabelPosition, niceTicks, yearTicks } from "../lib/ticks";
-import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
+import { ChartFrame, TOOLTIP_TRIGGER, TooltipCard } from "./chart/ChartFrame";
 
 /** Wealth card: the two totals plus who's ahead, leaning hard on dollars-in-pocket so it
  *  reads as a different question than the cost chart, not the same data twice. */
@@ -112,7 +112,11 @@ export const NetWorthChart = memo(function NetWorthChart({
           tick={{ fontSize: 12, fill: "var(--color-muted)" }}
           tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
         />
-        <Tooltip cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }} content={<NetWorthTooltip />} />
+        <Tooltip
+          trigger={TOOLTIP_TRIGGER}
+          cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }}
+          content={<NetWorthTooltip />}
+        />
         {/* Zero rule only when the data actually goes underwater, so it isn't dead chrome. */}
         {showZero && <ReferenceLine y={0} stroke="var(--color-line)" strokeWidth={1.5} />}
         {/* Renting is dashed so the two series differ by pattern, not just hue (matches the cost chart). */}
@@ -142,9 +146,12 @@ export const NetWorthChart = memo(function NetWorthChart({
           <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4" />
         )}
         {cross && (
+          // Sit the marker between the two lines at the breakeven year rather than on the buyer
+          // line. The lines cross at a fractional year, so the buyer value at the integer year is
+          // already a touch above the renter's; the midpoint reads as "they meet around here".
           <ReferenceDot
             x={cross.year}
-            y={cross.buyerNetWorth}
+            y={(cross.buyerNetWorth + cross.renterNetWorth) / 2}
             r={5}
             fill="var(--color-ink)"
             stroke="var(--color-paper)"

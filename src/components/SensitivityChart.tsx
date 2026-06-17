@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Label, ReferenceLine, Tooltip, XAxi
 import { usd } from "../lib/format";
 import { type SensitivityRow } from "../lib/sensitivity";
 import { niceTicks } from "../lib/ticks";
-import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
+import { ChartFrame, TOOLTIP_TRIGGER, TooltipCard } from "./chart/ChartFrame";
 
 // Breakeven rents cluster in the low thousands, where usdCompact's whole-$K rounding
 // collapses every tick to "$2K"; one decimal keeps them distinct ($1.6K, $1.8K).
@@ -76,7 +76,7 @@ export function SensitivityChart({ rows, monthlyRent }: { rows: SensitivityRow[]
           axisLine={false}
           tick={{ fontSize: 12, fill: "var(--color-ink)" }}
         />
-        <Tooltip cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }} content={<SensitivityTooltip />} />
+        <Tooltip trigger={TOOLTIP_TRIGGER} cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }} content={<SensitivityTooltip />} />
         {/* Your actual rent: the verdict threshold. Bars that cross it can flip the answer. */}
         <ReferenceLine x={monthlyRent} stroke="var(--color-rent)" strokeWidth={2} strokeDasharray="6 4">
           <Label value={`your rent ${usd(monthlyRent)}`} position="top" fontSize={11} fill="var(--color-rent-text)" />

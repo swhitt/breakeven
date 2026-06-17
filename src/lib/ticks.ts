@@ -14,8 +14,14 @@ export function niceStep(range: number, target = 5): number {
 /** Evenly-spaced ticks across [min, max]; always hits zero when the range spans it. */
 export function niceTicks(min: number, max: number): number[] {
   const step = niceStep(max - min);
+  // Walk the clean step grid by integer multiples rather than accumulating `+= step`
+  // (which drifts off round numbers with float error) and rounding to whole dollars
+  // (which collapses adjacent ticks on small ranges). Bounding to [min, max] also keeps
+  // a tick from landing just past the axis edge, where it crowds the top label.
+  const first = Math.ceil(min / step - 1e-9);
+  const last = Math.floor(max / step + 1e-9);
   const out: number[] = [];
-  for (let t = Math.ceil(min / step) * step; t <= max + step * 1e-6; t += step) out.push(Math.round(t));
+  for (let k = first; k <= last; k++) out.push(k === 0 ? 0 : k * step);
   return out;
 }
 

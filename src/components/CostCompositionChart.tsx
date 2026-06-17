@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } fr
 import { grossOwningCost, RECURRING_COSTS, type CostKey, type YearRow } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 import { niceTicks } from "../lib/ticks";
-import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
+import { ChartFrame, TOOLTIP_TRIGGER, TooltipCard } from "./chart/ChartFrame";
 
 // Colors for the registry carrying costs. This chart is entirely the BUYING side,
 // so orange (= buy) reading as interest is fine, but teal (= rent in the other
@@ -126,6 +126,10 @@ export const CostCompositionChart = memo(function CostCompositionChart({ years }
   const maxTotal = Math.max(...rows.map((r) => items.reduce((s, it) => s + it.get(r.raw), 0)), 0);
   const minTotal = showCredit ? Math.min(...rows.map((r) => r.taxCredit), 0) : 0;
   const yTicks = niceTicks(minTotal, maxTotal);
+  // Headroom above the tallest stack so its rounded top corner doesn't clip against the axis
+  // line (every other chart pads its domain; this one used the raw total). Ticks stay on the
+  // unpadded range, so the pad is empty space, not a stray label.
+  const domainTop = maxTotal + Math.max(maxTotal - minTotal, 1) * 0.08;
 
   const legendItems = [
     ...items.map((it) => ({ label: it.label, color: it.color })),
@@ -157,7 +161,7 @@ export const CostCompositionChart = memo(function CostCompositionChart({ years }
             tickFormatter={(y) => `${y}y`}
           />
           <YAxis
-            domain={[minTotal, maxTotal]}
+            domain={[minTotal, domainTop]}
             ticks={yTicks}
             tickLine={false}
             axisLine={false}
@@ -166,6 +170,7 @@ export const CostCompositionChart = memo(function CostCompositionChart({ years }
             tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
           />
           <Tooltip
+            trigger={TOOLTIP_TRIGGER}
             cursor={{ fill: "var(--color-ink)", fillOpacity: 0.04 }}
             content={<CompositionTooltip items={items} showCredit={showCredit} />}
           />

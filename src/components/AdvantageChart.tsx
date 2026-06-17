@@ -1,9 +1,9 @@
-import { memo } from "react";
+import { memo, useId } from "react";
 import { Area, CartesianGrid, ComposedChart, Label, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { HorizonPoint } from "../engine/calculator";
 import { usd, usdCompact } from "../lib/format";
 import { breakevenLabelPosition, niceTicks, yearTicks } from "../lib/ticks";
-import { ChartFrame, TooltipCard } from "./chart/ChartFrame";
+import { ChartFrame, TOOLTIP_TRIGGER, TooltipCard } from "./chart/ChartFrame";
 
 interface GapRow {
   year: number;
@@ -88,6 +88,13 @@ export const AdvantageChart = memo(function AdvantageChart({
   const fillBottom = Math.min(dataMin, 0);
   const zeroOffset = fillTop <= fillBottom ? 0 : fillTop / (fillTop - fillBottom);
 
+  // SVG gradient ids are document-global, so two chart instances (or a strict-mode double
+  // mount) sharing a static id would both resolve to whichever <defs> rendered first, and the
+  // data-dependent zero split would paint the wrong side. Scope the ids to this instance.
+  const uid = useId().replace(/:/g, "");
+  const fillId = `advFill-${uid}`;
+  const strokeId = `advStroke-${uid}`;
+
   const ariaLabel = breakevenYear != null
     ? `Net financial advantage of buying versus renting over ${rows.length} years. Renting stays ahead until year ${breakevenYear}, after which buying is cheaper.`
     : `Net financial advantage of buying versus renting over ${rows.length} years. Renting stays ahead the whole time at this rent.`;
@@ -96,11 +103,11 @@ export const AdvantageChart = memo(function AdvantageChart({
     <ChartFrame ariaLabel={ariaLabel}>
       <ComposedChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }} accessibilityLayer>
         <defs>
-          <linearGradient id="advFill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
             <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={0.22} />
             <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={0.22} />
           </linearGradient>
-          <linearGradient id="advStroke" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={strokeId} x1="0" y1="0" x2="0" y2="1">
             <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={1} />
             <stop offset={zeroOffset} stopColor="var(--color-rent)" stopOpacity={1} />
           </linearGradient>
@@ -123,16 +130,20 @@ export const AdvantageChart = memo(function AdvantageChart({
           tick={{ fontSize: 12, fill: "var(--color-muted)" }}
           tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
         />
-        <Tooltip cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }} content={<AdvantageTooltip />} />
+        <Tooltip
+          trigger={TOOLTIP_TRIGGER}
+          cursor={{ stroke: "var(--color-muted)", strokeDasharray: "3 3" }}
+          content={<AdvantageTooltip />}
+        />
         {/* Zero line is the whole point: above it buying wins, below it renting wins. */}
         <ReferenceLine y={0} stroke="var(--color-muted)" strokeWidth={1.5} />
         <Area
           type="monotone"
           dataKey="gap"
           name="gap"
-          stroke="url(#advStroke)"
+          stroke={`url(#${strokeId})`}
           strokeWidth={2.5}
-          fill="url(#advFill)"
+          fill={`url(#${fillId})`}
           dot={false}
           activeDot={{ r: 4 }}
           isAnimationActive={false}
@@ -143,7 +154,10 @@ export const AdvantageChart = memo(function AdvantageChart({
           <ReferenceLine x={breakevenYear} stroke="var(--color-muted)" strokeDasharray="4 4" />
         )}
         {cross && (
-          <ReferenceDot x={cross.year} y={cross.gap} r={4} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
+          // Pin the marker to the zero baseline, not the curve's value at the integer breakeven
+          // year (which has already crept positive). The true crossing is fractional; sitting it
+          // on the zero rule reads honestly as "the flip happens around here".
+          <ReferenceDot x={cross.year} y={0} r={4} fill="var(--color-ink)" stroke="var(--color-paper)" strokeWidth={2}>
             <Label
               value={`breakeven ${breakevenYear}y`}
               position={breakevenLabelPosition(breakevenYear!, rows.length)}

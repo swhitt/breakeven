@@ -5,6 +5,13 @@ import { ResponsiveContainer } from "recharts";
 // inner wrapper must agree on this exact class or the layout jumps when a lazy chart mounts.
 export const CHART_HEIGHT_CLASS = "h-72 w-full sm:h-80";
 
+// Touch devices have no hover, so Recharts' default hover tooltip is unreachable there: the
+// per-year running totals (the richest data) can never be seen. Show tooltips on tap (Recharts'
+// click trigger) for coarse pointers, keeping hover on pointer devices. The charts mount lazily
+// on the client, so window is always defined here.
+export const TOOLTIP_TRIGGER: "hover" | "click" =
+  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches ? "click" : "hover";
+
 /**
  * The inner chart shell every horizon chart shares: a fixed-height div carrying the
  * screen-reader summary (role="img" + aria-label, since the SVG itself is opaque to AT)
