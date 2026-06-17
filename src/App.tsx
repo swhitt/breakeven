@@ -9,7 +9,7 @@ import { type ActiveZip } from "./components/LocationPicker";
 import { lookupZip, type ZipData } from "./lib/zips";
 import { Breakdown } from "./components/Breakdown";
 import { Derivation } from "./components/Derivation";
-import { Disclosure, InfoTip, MoneyInput } from "./ui";
+import { Disclosure, InfoTip, MoneyInput, Segmented } from "./ui";
 import { CAPITAL_GAINS_EXCLUSION, MORTGAGE_INTEREST_DEBT_CAP, saltCapForYear, TAX_YEAR } from "./engine/taxConstants";
 import { yearsLabel, pct, usd } from "./lib/format";
 import { freshness } from "./lib/freshness";
@@ -38,6 +38,9 @@ const AdvantageChart = lazy(() =>
 );
 const CostCompositionChart = lazy(() =>
   import("./components/CostCompositionChart").then((m) => ({ default: m.CostCompositionChart })),
+);
+const MonthlyCostChart = lazy(() =>
+  import("./components/MonthlyCostChart").then((m) => ({ default: m.MonthlyCostChart })),
 );
 const SensitivityChart = lazy(() =>
   import("./components/SensitivityChart").then((m) => ({ default: m.SensitivityChart })),
@@ -231,6 +234,10 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   const deferredInputs = useDeferredValue(inputsForCalc);
   const sensitivity = useMemo(() => computeSensitivity(deferredInputs), [deferredInputs]);
   const driver = drivingFactor(sensitivity);
+
+  // Monthly owning-vs-renting chart: show the owning line net of the tax benefit by default,
+  // toggleable to the gross (pre-benefit) figure.
+  const [ownNet, setOwnNet] = useState(true);
 
   // A ZIP refinement relabels the place to that ZIP's real city, so the headline, picker,
   // and share text never show the old metro name over the ZIP's numbers.
@@ -547,11 +554,11 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
         {/* On mobile the controls stack above the results, so surface a one-line
             verdict up top for immediate feedback (hidden on lg, where the full
             Verdict sits beside the controls). */}
-        <div className="mt-6 lg:hidden">
+        <div className="mt-4 lg:hidden">
           <CondensedVerdict result={result} inputs={inputs} />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:mt-8 lg:grid-cols-[minmax(0,380px)_1fr]">
+        <div className="mt-5 grid grid-cols-1 gap-6 lg:mt-6 lg:grid-cols-[minmax(0,380px)_1fr]">
           {/* Sticky offset clears the ~57px sticky header (was top-6, which let the
               header overlap the panel's first line). */}
           <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-[72px] lg:self-start">
@@ -634,12 +641,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
           <section className="min-w-0 space-y-6">
             <Verdict result={result} inputs={inputs} driver={driver} />
 
-            <MonthlyPayment result={result} inputs={inputs} />
-
-            <Affordability result={result} inputs={inputs} patch={patch} />
-
-            {/* Wealth first: what you're actually worth is the question people feel; the cost
-                views below explain how you get there. */}
+            {/* Lead with the wealth chart right under the verdict so there's a real graph above
+                the fold. What you're actually worth is the question people feel; the payment and
+                cost views below explain how you get there. */}
             <ChartCard
               title="What you're worth, buying vs renting"
               legend={<Legend />}
@@ -657,6 +661,10 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
                 yearsToStay={deferredInputs.yearsToStay}
               />
             </ChartCard>
+
+            <MonthlyPayment result={result} inputs={inputs} />
+
+            <Affordability result={result} inputs={inputs} patch={patch} />
 
             <ChartCard
               title="Cost gap: how far ahead buying or renting is"
@@ -693,6 +701,31 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               }
             >
               <CostCompositionChart years={deferredResult.years} />
+            </ChartCard>
+
+            <ChartCard
+              title="Monthly cost: owning vs renting"
+              legend={
+                <Segmented
+                  ariaLabel="Whether to include the mortgage tax break in the owning cost"
+                  value={ownNet ? "net" : "gross"}
+                  onChange={(v) => setOwnNet(v === "net")}
+                  options={[
+                    { label: "With tax break", value: "net" },
+                    { label: "Without", value: "gross" },
+                  ]}
+                />
+              }
+              note={
+                <>
+                  Your all-in monthly cost of owning (mortgage, property tax, insurance, maintenance, plus any HOA and
+                  PMI){ownNet ? " less the mortgage-interest and SALT tax break" : ""}, against the rent that year. Owning
+                  holds roughly steady while rent climbs, so where they cross is when renting starts costing more each
+                  month.
+                </>
+              }
+            >
+              <MonthlyCostChart years={deferredResult.years} net={ownNet} />
             </ChartCard>
 
             <ChartCard
@@ -815,11 +848,11 @@ function Hero({ metro, result, inputs }: { metro: string; result: CalcResult; in
   // headline can't shout a winner while the card right below it reads "Toss-up".
   const closeCall = isCloseCall(result, inputs);
   return (
-    <div className="pt-10 sm:pt-14">
+    <div className="pt-4 sm:pt-6">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted">
         Should you rent or buy in {metro}?
       </p>
-      <h1 className="mt-2 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
+      <h1 className="mt-2 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
         {closeCall ? (
           <>
             At <span className="text-ink">{usd(inputs.monthlyRent)}/mo</span> rent, it's basically a toss-up.
@@ -834,26 +867,6 @@ function Hero({ metro, result, inputs }: { metro: string; result: CalcResult; in
           </>
         )}
       </h1>
-      <p className="mt-3 max-w-2xl text-lg text-muted">
-        Renting and buying break even at a rent of{" "}
-        <span className="font-semibold text-ink">{usd(result.breakevenRent)}/mo</span>
-        {closeCall ? (
-          <>, so this close it comes down to your assumptions. </>
-        ) : (
-          <>
-            , and you're {renting ? "under" : "over"} that at{" "}
-            <span className="font-semibold text-ink">{usd(inputs.monthlyRent)}/mo</span>.{" "}
-          </>
-        )}
-        {result.breakevenYear == null ? (
-          <>Owning never catches up here, even over the longest horizon below.</>
-        ) : (
-          <>
-            Buying pulls ahead after{" "}
-            <span className="font-semibold text-ink">{yearsLabel(result.breakevenYear)}</span>.
-          </>
-        )}
-      </p>
     </div>
   );
 }
