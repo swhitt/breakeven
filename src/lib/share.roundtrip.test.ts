@@ -29,7 +29,6 @@ const defaults: AppInputs = {
   marginalTaxRate: 0.24,
   standardDeduction: 32200,
   otherSALT: 0,
-  saltCap: 40400,
   filingJointly: true,
   capitalGainsRate: 0.15,
   monthlyRent: 2200,

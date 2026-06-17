@@ -1,5 +1,5 @@
 import type { CalcInputs } from "./calculator";
-import { SALT_CAP, STANDARD_DEDUCTION } from "./taxConstants";
+import { STANDARD_DEDUCTION } from "./taxConstants";
 import type { LocationData, MarketData, StateRateTable } from "../data/types";
 
 /**
@@ -59,7 +59,6 @@ export function buildInputs(
     marginalTaxRate: 0.24,
     standardDeduction: filingJointly ? STANDARD_DEDUCTION.joint : STANDARD_DEDUCTION.single,
     otherSALT: 0,
-    saltCap: SALT_CAP,
     filingJointly,
     capitalGainsRate: 0.15,
     // Tax-rate estimator is on by default (it's the headline feature) but falls back

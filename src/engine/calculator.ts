@@ -70,7 +70,6 @@ export interface CalcInputs {
   marginalTaxRate: number; // e.g. 0.24
   standardDeduction: number; // for the itemization-premium calc
   otherSALT: number; // other state/local taxes counted toward SALT cap
-  saltCap: number; // e.g. 10000
   filingJointly: boolean; // cap-gains exclusion 500k vs 250k
   capitalGainsRate: number; // e.g. 0.15
 

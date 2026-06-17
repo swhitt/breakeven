@@ -1,5 +1,6 @@
 import { grossOwningCost, netOwningCost, sumCosts, type CalcResult } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
+import { saltCapForYear, TAX_YEAR } from "../engine/taxConstants";
 import { pct, usd } from "./format";
 
 // Builds the full, auditable year-by-year dataset as CSV: a quoted key/value metadata block
@@ -85,7 +86,9 @@ export function buildBreakdownCsv(ctx: CsvContext): string {
     ["Filing status", inputs.filingJointly ? "Married/joint" : "Single"],
     ["Marginal tax rate", pct(inputs.marginalTaxRate, 1)],
     ["Standard deduction", usd(inputs.standardDeduction)],
-    ["SALT cap", usd(inputs.saltCap)],
+    // The cap the engine actually applies in the first year; it steps down per saltCapForYear
+    // over the horizon, so this is the entry-year value, not a fixed figure.
+    ["SALT cap (entry year)", usd(saltCapForYear(TAX_YEAR))],
     ["Monthly rent", `${usd(inputs.monthlyRent)}/mo`],
     ["Renters insurance", `${usd(inputs.rentersInsuranceMonthly)}/mo`],
     ["Years you stay", `${inputs.yearsToStay}`],
