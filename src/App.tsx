@@ -1019,10 +1019,20 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
     ...(taxBenefit > 0 ? [{ label: "Tax benefit", value: taxBenefit, credit: true }] : []),
   ];
 
+  // The "what is this figure" prose lives in a tooltip on the headline now, so the card stays
+  // scannable while the gross (pre-tax-benefit) figure is still one tap away.
+  const explain =
+    taxBenefit > 0
+      ? `All-in year-1 housing (principal & interest, property tax, insurance, plus any HOA and PMI), minus the estimated federal tax benefit from itemizing mortgage interest and SALT over the standard deduction. ${usd(gross)}/mo before that benefit.`
+      : "All-in year-1 housing (principal & interest, property tax, insurance, plus any HOA and PMI). Itemizing doesn't beat the standard deduction at these numbers, so there's no tax benefit to net out.";
+
   return (
     <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 className="text-base font-bold">Net effective monthly payment</h3>
+        <h3 className="inline-flex items-center text-base font-bold">
+          Net effective monthly payment
+          <InfoTip text={explain} />
+        </h3>
         <div className="text-right">
           <span className="tnum text-2xl font-extrabold">{usd(net)}</span>
           <span className="text-base font-semibold text-muted">/mo</span>
@@ -1048,19 +1058,6 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
           )}
         </p>
       )}
-      <p className="mt-2 text-sm text-muted">
-        Your all-in monthly housing payment (principal &amp; interest, property tax, insurance, plus any HOA and PMI) in
-        year 1,
-        {taxBenefit > 0 ? (
-          <>
-            {" "}
-            minus the estimated federal tax benefit (what itemizing the mortgage interest and SALT saves over the
-            standard deduction), so <span className="text-ink">{usd(gross)}/mo</span> before it.
-          </>
-        ) : (
-          " before any tax benefit: at these numbers itemizing doesn't beat the standard deduction, so there's nothing to net out."
-        )}
-      </p>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

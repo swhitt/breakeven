@@ -27,6 +27,7 @@ function SliderRow({
   format,
   badge,
   hint,
+  info,
 }: {
   label: string;
   value: number;
@@ -37,9 +38,10 @@ function SliderRow({
   format: (n: number) => string;
   badge?: ReactNode;
   hint?: ReactNode;
+  info?: string;
 }) {
   return (
-    <Field label={label} badge={badge} hint={hint}>
+    <Field label={label} badge={badge} hint={hint} info={info}>
       <Slider value={value} min={min} max={max} step={step} onChange={onChange} format={format} label={label} />
     </Field>
   );
@@ -99,9 +101,9 @@ function CostRow({
   );
   const hint =
     mode === "pct"
-      ? `${usd(homePrice * rate)}/yr now, rising with the home's value`
+      ? `${usd(homePrice * rate)}/yr, rises with the home's value`
       : homePrice > 0
-        ? `${pct(annual / homePrice, 2)} of today's value, rising with inflation`
+        ? `${pct(annual / homePrice, 2)} of value, rises with inflation`
         : undefined;
   // A labelled group, not a <label>: the header holds a Segmented (toggle buttons), and an
   // interactive control nested in a <label> is invalid. Group mode means the inner control
@@ -180,7 +182,7 @@ function TaxRateControl({ inputs, patch }: { inputs: AppInputs; patch: Patch }) 
           ]}
         />
       }
-      hint={
+      info={
         auto
           ? "The federal rate values the mortgage-interest and property-tax deduction; your state and local income tax add to the SALT cap."
           : "Your federal marginal rate, which values the mortgage-interest and property-tax deduction."
@@ -258,10 +260,12 @@ export function Controls({
 }) {
   const downAmount = inputs.homePrice * inputs.downPaymentPct;
   const pmiOn = inputs.downPaymentPct < 0.2;
+  const loanAmount = inputs.homePrice * (1 - inputs.downPaymentPct);
+  const isJumbo = loanAmount > CONFORMING_LOAN_LIMIT;
 
   return (
     <div className="space-y-5">
-      <Field label="Location" hint="Search a metro or type a ZIP for that ZIP's own home price and rent.">
+      <Field label="Location" info="Search a metro, or type a ZIP for that ZIP's own home price and rent.">
         <LocationPicker
           locations={locations}
           selected={selected}
@@ -277,7 +281,7 @@ export function Controls({
         </Field>
         <Field
           label="Comparable rent"
-          hint="Auto-filled with the local typical rent for a similar home. Enter your own rent for a verdict about you."
+          info="Auto-filled with the local typical rent for a similar home. Enter your own rent for a verdict about you."
           badge={
             <LiveBadge>
               Zillow {activeZip ? "est. " : ""}
@@ -285,7 +289,7 @@ export function Controls({
             </LiveBadge>
           }
         >
-          <MoneyInput value={inputs.monthlyRent} onChange={(n) => patch({ monthlyRent: n })} step={50} />
+          <MoneyInput value={inputs.monthlyRent} onChange={(n) => patch({ monthlyRent: n })} step={50} ariaLabel="Comparable rent" />
         </Field>
       </div>
 
@@ -293,7 +297,7 @@ export function Controls({
           affordability line under the payment) as much as it feeds the tax-benefit estimate. */}
       <Field
         label="Household income"
-        hint="Optional. Powers the affordability check below the payment, and your tax-benefit estimate in Advanced."
+        info="Optional. Powers the affordability check below the payment, and your tax-benefit estimate in Advanced."
       >
         <MoneyInput
           value={inputs.annualIncome}
@@ -338,10 +342,11 @@ export function Controls({
         step={0.0025}
         onChange={(n) => patch({ investmentReturn: n })}
         format={(n) => pct(n, 1)}
+        info="If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around 6% is typical for a stock-heavy mix). It's the single biggest lever: a higher return favors renting."
         hint={(() => {
           const dp = inputs.homePrice * inputs.downPaymentPct;
           const fv = dp * Math.pow(1 + inputs.investmentReturn, inputs.yearsToStay);
-          return `If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around ${pct(inputs.investmentReturn, 0)} is typical for a stock-heavy mix). Your ${usd(dp)} would grow to about ${usd(fv)} in ${inputs.yearsToStay} years, the return buying has to beat. It's the single biggest lever: higher favors renting.`;
+          return `${usd(dp)} → ${usd(fv)} over ${inputs.yearsToStay} ${inputs.yearsToStay === 1 ? "year" : "years"}, the return buying has to beat`;
         })()}
       />
 
@@ -354,19 +359,20 @@ export function Controls({
         onChange={(n) => patch({ mortgageRate: n })}
         format={(n) => pct(n, 2)}
         badge={<LiveBadge>Freddie Mac {pct(market.mortgage.rate30, 2)}</LiveBadge>}
+        info={
+          isJumbo
+            ? `Loans over the ${usd(CONFORMING_LOAN_LIMIT)} conforming limit are jumbo, priced off a different rate than the conforming Freddie Mac average shown.`
+            : undefined
+        }
         hint={(() => {
-          const loan = inputs.homePrice * (1 - inputs.downPaymentPct);
-          if (loan <= CONFORMING_LOAN_LIMIT) return undefined;
+          if (!isJumbo) return undefined;
           const spread = market.mortgage.jumboSpread;
           const base = inputs.mortgageTermYears === 15 ? market.mortgage.rate15 : market.mortgage.rate30;
-          const lead = `Your loan tops the ${usd(CONFORMING_LOAN_LIMIT)} conforming limit, so it's a jumbo loan, which trades at a different rate than the conforming average shown.`;
-          if (spread == null) return `${lead} Set your own rate if you have a jumbo quote.`;
+          if (spread == null) return "Jumbo loan, priced off a different rate. Set your own if you have a quote.";
           const jumboRate = base + spread;
           return (
             <>
-              {lead} Jumbo currently runs about <span className="font-semibold text-ink">{pct(jumboRate, 2)}</span> (
-              {spread >= 0 ? "+" : ""}
-              {pct(spread, 2)} vs conforming, per Optimal Blue).{" "}
+              Jumbo loan, currently about <span className="font-semibold text-ink">{pct(jumboRate, 2)}</span>.{" "}
               <button
                 type="button"
                 onClick={() => patch({ mortgageRate: jumboRate })}
@@ -419,6 +425,7 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ homeAppreciation: n })}
             format={(n) => pct(n, 1)}
+            info="A conservative long-run default. Recent local run-ups overstate the future, so we don't start there."
             hint={(() => {
               // Local 5yr home-value CAGR for the active place (the ZIP's own, or the metro's),
               // offered as a one-tap alternative but never the default: recent local run-ups
@@ -431,11 +438,9 @@ export function Controls({
                   className="text-left text-rent-text underline-offset-2 hover:underline"
                   onClick={() => patch({ homeAppreciation: localAppr })}
                 >
-                  {apprPlace} ran {pct(localAppr, 1)}/yr the last 5 years (use it). Recent run-ups overstate the future.
+                  {apprPlace} ran {pct(localAppr, 1)}/yr the last 5 years (use it)
                 </button>
-              ) : (
-                "Long-run default. Recent local run-ups overstate the future."
-              );
+              ) : undefined;
             })()}
           />
           <SliderRow

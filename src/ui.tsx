@@ -9,12 +9,18 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 export function Field({
   label,
   hint,
+  info,
   badge,
   children,
   group = false,
 }: {
   label: string;
+  // Shown below the control, always visible. Reserve for live/derived values ("$X down") and
+  // interactive "use it" actions, NOT prose, or the panel turns into a wall of text.
   hint?: ReactNode;
+  // On-demand explanation, surfaced via an InfoTip "i" next to the label. This is where teaching
+  // prose belongs so it stays reachable without crowding the form.
+  info?: string;
   badge?: ReactNode;
   children: ReactNode;
   group?: boolean;
@@ -23,8 +29,10 @@ export function Field({
   const hintId = useId();
   const labelRow = (
     <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-      <span id={group ? id : undefined} className="whitespace-nowrap text-sm font-medium text-ink">
-        {label}
+      <span className="inline-flex items-center whitespace-nowrap text-sm font-medium text-ink">
+        {/* id wraps just the label text so an InfoTip "i" never pollutes the group's name. */}
+        <span id={group ? id : undefined}>{label}</span>
+        {info && <InfoTip text={info} />}
       </span>
       {badge}
     </div>
@@ -34,16 +42,19 @@ export function Field({
       {hint}
     </p>
   ) : null;
-  return group ? (
-    <div role="group" aria-labelledby={id}>
+  // A <label> wrapping the control gives implicit name association, but it can't contain an
+  // interactive element: the InfoTip button (info) or several controls (group) would both be
+  // invalid nested in a <label>, and a stray click would toggle the label's input. In those
+  // cases render a header div instead; the control carries its own name (Slider/MoneyInput take
+  // an explicit label/ariaLabel). The hint also stays outside the <label> for the same reason
+  // (it can hold a "use it" button).
+  return group || info ? (
+    <div role={group ? "group" : undefined} aria-labelledby={group ? id : undefined}>
       {labelRow}
       {children}
       {hintEl}
     </div>
   ) : (
-    // The hint lives OUTSIDE the <label>: it can contain an interactive control (the "use this
-    // rate" button), and an interactive element nested in a <label> is invalid HTML (a click
-    // would also activate the label's input). Visual layout is unchanged, it still sits below.
     <>
       <label className="block">
         {labelRow}
