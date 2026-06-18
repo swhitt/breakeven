@@ -48,8 +48,10 @@ export interface CalcInputs {
   yearsToStay: number; // e.g. 9
   // Does double duty (on purpose): the opportunity cost of the down payment AND the
   // discount rate for every cash flow. So mortgage and uncertain-appreciation flows
-  // are discounted at the same risk-blind rate, a deliberate simplification.
-  investmentReturn: number; // annual opportunity / discount rate, e.g. 0.05
+  // are discounted at the same risk-blind rate, a deliberate simplification. The engine
+  // discounts/compounds at this rate net of INVESTMENT_TAX_DRAG, since the renter's
+  // alternative is a taxable portfolio (see afterTaxReturn).
+  investmentReturn: number; // annual opportunity / discount rate (pre-tax), e.g. 0.05
   inflation: number; // annual, e.g. 0.024
 
   // Recurring ownership costs. Property tax, maintenance, and insurance each carry
@@ -317,13 +319,27 @@ function buyerNetWorthAt(inp: CalcInputs, homeValue: number, loanBalance: number
  * at investmentReturn/12. Tax benefit credited annually as the itemization
  * premium over the standard deduction (so it's $0 when standard deduction wins).
  */
+// The renter's "invest the difference" savings sit in a taxable brokerage, so they don't
+// compound at the full return: a buy-and-hold index fund pays tax on its dividends every year,
+// while the appreciation is deferred (and partly stepped up), much as the home's sale gain is
+// usually shielded by the IRC 121 exclusion. The lifetime drag on such a portfolio runs ~0.5%/yr,
+// which we take off the opportunity/discount rate so neither side compounds entirely tax-free.
+// Deliberately NOT tied to capitalGainsRate: that taxes a realized gain, this is an annual
+// holding drag, and coupling them would make the cap-gains knob push the verdict two ways.
+export const INVESTMENT_TAX_DRAG = 0.005;
+
+// After-tax opportunity cost of capital: the single rate that both discounts every flow and
+// compounds the renter's invested savings. Using one rate for both is what keeps the cost
+// breakeven and the wealth crossover on the same year (see the net-worth identity in calculate).
+const afterTaxReturn = (inp: CalcInputs): number => Math.max(0, inp.investmentReturn - INVESTMENT_TAX_DRAG);
+
 function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean): BuySim {
   const months = Math.round(horizonYears * 12);
   const loan = inp.homePrice * (1 - inp.downPaymentPct);
   const payment = monthlyMortgagePayment(loan, inp.mortgageRate, inp.mortgageTermYears);
   const termMonths = Math.round(inp.mortgageTermYears * 12);
   const mRate = inp.mortgageRate / 12;
-  const disc = inp.investmentReturn / 12;
+  const disc = afterTaxReturn(inp) / 12;
 
   const downPayment = inp.homePrice * inp.downPaymentPct;
   const closing = inp.homePrice * inp.buyingClosingPct;
@@ -455,7 +471,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
  */
 function simulateRent(inp: CalcInputs, horizonYears: number, monthlyRent: number): number {
   const months = Math.round(horizonYears * 12);
-  const disc = inp.investmentReturn / 12;
+  const disc = afterTaxReturn(inp) / 12;
 
   const deposit = monthlyRent * inp.securityDepositMonths;
   const brokerFee = monthlyRent * inp.brokerFeeMonths;
@@ -496,7 +512,7 @@ export function calculate(rawInp: CalcInputs): CalcResult {
   // Horizon sweep for the charts, the breakeven year, and the per-year cumulative PV the net
   // worth derives from. (When does buying overtake renting?) Net worth is built here too, so
   // the wealth chart spans the full horizon, not just the stay.
-  const disc = inp.investmentReturn / 12;
+  const disc = afterTaxReturn(inp) / 12;
   const maxYears = Math.max(horizon, inp.mortgageTermYears, 30);
   const points: HorizonPoint[] = [];
   const netWorth: NetWorthPoint[] = [];

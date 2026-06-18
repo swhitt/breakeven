@@ -653,8 +653,8 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               note={
                 <>
                   Your wealth if you sold and moved out after each year. Buying is home equity after selling costs and
-                  capital-gains tax. Renting is the down payment plus monthly savings, invested. They cross the same year
-                  buying pulls ahead.
+                  capital-gains tax. Renting is the down payment plus monthly savings, invested at your after-tax return.
+                  They cross the same year buying pulls ahead.
                 </>
               }
             >
@@ -1437,7 +1437,7 @@ function Sources({ market }: { market: MarketData }) {
         <p>
           The model converts every cost of owning (mortgage interest and principal, taxes, maintenance, insurance,
           PMI, closing and selling costs, lost investment returns) into a single breakeven monthly rent, discounting
-          all future cash flow at your investment-return rate. It uses a four-bucket cost decomposition
+          all future cash flow at your after-tax investment return. It uses a four-bucket cost decomposition
           (initial costs, recurring costs, opportunity costs, and net sale proceeds), grounded in the academic
           user-cost-of-homeownership literature.
         </p>
@@ -1487,11 +1487,13 @@ function MethodologyFormulas() {
       title: "Present value of any stream",
       body: (
         <>
-          Every monthly flow is discounted at <code className="text-ink">d = investmentReturn / 12</code>:
+          Every monthly flow is discounted at your after-tax return,{" "}
+          <code className="text-ink">d = (investmentReturn &minus; 0.5%/yr) / 12</code>:
           <Formula>PV = Σ flow_m / (1 + d)^m</Formula>
-          The down payment and closing costs sit at t = 0 (undiscounted); sale proceeds land at the horizon. Using your
-          return as the discount rate is deliberate: certain flows (the mortgage) and uncertain ones (appreciation) are
-          discounted alike, a known simplification.
+          The down payment and closing costs sit at t = 0 (undiscounted); sale proceeds land at the horizon. The 0.5%/yr
+          haircut is the tax drag on the renter's invested savings (a taxable brokerage isn't tax-free), so neither side
+          compounds entirely tax-free. Using one return as the discount rate for certain flows (the mortgage) and
+          uncertain ones (appreciation) alike is a known simplification.
         </>
       ),
     },
@@ -1540,8 +1542,8 @@ function MethodologyFormulas() {
           The buyer's wealth is the sale proceeds (equity after selling costs and capital-gains tax). The renter invests
           the difference:
           <Formula>renterNetWorth = buyerNetWorth + (PV_buy - PV_rent) · (1 + d)^N</Formula>
-          the down payment plus every month's cash-flow gap, compounded at your return. By construction the wealth lines
-          cross the same year the cost lines do.
+          the down payment plus every month's cash-flow gap, compounded at the same after-tax return. By construction the
+          wealth lines cross the same year the cost lines do.
         </>
       ),
     },

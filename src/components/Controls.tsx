@@ -342,7 +342,7 @@ export function Controls({
         step={0.0025}
         onChange={(n) => patch({ investmentReturn: n })}
         format={(n) => pct(n, 1)}
-        info="If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around 6% is typical for a stock-heavy mix). It's the single biggest lever: a higher return favors renting."
+        info="If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around 6% is typical for a stock-heavy mix). We grow it net of a ~0.5%/yr tax drag, since a taxable brokerage isn't tax-free. It's the single biggest lever: a higher return favors renting."
         hint={(() => {
           const dp = inputs.homePrice * inputs.downPaymentPct;
           const fv = dp * Math.pow(1 + inputs.investmentReturn, inputs.yearsToStay);
