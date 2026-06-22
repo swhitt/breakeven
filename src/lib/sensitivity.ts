@@ -1,4 +1,4 @@
-import { breakevenRentOnly, type CalcInputs } from "../engine/calculator";
+import { breakevenRentOnly, impliedRate, type CalcInputs } from "../engine/calculator";
 import { pct } from "./format";
 
 // Each factor sweeps one uncertain input across a plausible band, holding the rest at
@@ -34,31 +34,47 @@ export interface SensitivityRow {
 
 export function buildFactors(inp: CalcInputs): Factor[] {
   const p1 = (n: number) => pct(n, 1);
-  // Maintenance can be entered as a flat dollar figure; sweep it as a percent of value either way
-  // (deriving the implied rate from a flat entry) so it sits alongside the other rate sweeps.
-  const maintRate =
-    inp.maintenance.kind === "pctOfValue"
-      ? inp.maintenance.rate
-      : inp.homePrice > 0
-        ? inp.maintenance.annual / inp.homePrice
-        : 0.01;
   return [
     { label: "Mortgage rate", lo: Math.max(0, inp.mortgageRate - 0.015), hi: inp.mortgageRate + 0.015, fmt: (n) => pct(n, 2), set: setNumeric("mortgageRate") },
     { label: "Investment return", lo: Math.max(0, inp.investmentReturn - 0.02), hi: inp.investmentReturn + 0.02, fmt: p1, set: setNumeric("investmentReturn") },
     { label: "Home appreciation", lo: inp.homeAppreciation - 0.02, hi: inp.homeAppreciation + 0.02, fmt: p1, set: setNumeric("homeAppreciation") },
-    { label: "Years you stay", lo: Math.max(1, inp.yearsToStay - 3), hi: inp.yearsToStay + 3, fmt: (n) => `${Math.round(n)}y`, set: setNumeric("yearsToStay") },
+    // Round the endpoints: the engine rounds yearsToStay to whole years internally, so an
+    // un-rounded (e.g. fractional, share-link) center would sweep a band whose printed labels
+    // and computed horizons disagree. Rounding here keeps the swept value, the engine's horizon,
+    // and the label in sync.
+    { label: "Years you stay", lo: Math.max(1, Math.round(inp.yearsToStay - 3)), hi: Math.round(inp.yearsToStay + 3), fmt: (n) => `${Math.round(n)}y`, set: setNumeric("yearsToStay") },
     { label: "Rent growth", lo: Math.max(0, inp.rentGrowth - 0.015), hi: inp.rentGrowth + 0.015, fmt: p1, set: setNumeric("rentGrowth") },
     { label: "Inflation", lo: Math.max(0, inp.inflation - 0.015), hi: inp.inflation + 0.015, fmt: p1, set: setNumeric("inflation") },
     // The 1-2%/yr maintenance rule of thumb is wide enough to move (sometimes flip) the verdict,
-    // so it belongs in the tornado rather than hiding in Advanced.
-    {
-      label: "Maintenance",
-      lo: Math.max(0, maintRate - 0.005),
-      hi: maintRate + 0.01,
-      fmt: p1,
-      set: (i, v) => ({ ...i, maintenance: { kind: "pctOfValue", rate: v } }),
-    },
+    // so it belongs in the tornado rather than hiding in Advanced. Sweep it in its NATIVE basis:
+    // a flat-dollar entry rides inflation in the engine while a pct entry rides appreciation, so
+    // converting flat to pct would center the bar on the wrong cost behavior whenever the two
+    // diverge. Both modes are swept as a rate-like scalar around the implied rate, but the flat
+    // setter rebuilds a flat-dollar figure (rate * price) so the engine sees the same kind it would
+    // for a real entry.
+    maintenanceFactor(inp, p1),
   ];
+}
+
+/**
+ * Maintenance sweep that preserves the entry's basis kind. Both modes sweep around the same
+ * implied %-of-value rate (so the band width matches the 1-2% rule of thumb), but a flat-dollar
+ * entry stays flat-dollar through the setter, keeping the swept cost on the inflation track the
+ * engine actually uses for it rather than flipping it onto the appreciation track.
+ */
+function maintenanceFactor(inp: CalcInputs, fmtRate: (n: number) => string): Factor {
+  const maintRate = impliedRate(inp.maintenance, inp.homePrice, 0.01);
+  const isFlat = inp.maintenance.kind === "flatAnnual";
+  return {
+    label: "Maintenance",
+    lo: Math.max(0, maintRate - 0.005),
+    hi: maintRate + 0.01,
+    fmt: fmtRate,
+    set: (i, v) =>
+      isFlat
+        ? { ...i, maintenance: { kind: "flatAnnual", annual: v * i.homePrice } }
+        : { ...i, maintenance: { kind: "pctOfValue", rate: v } },
+  };
 }
 
 /** Sweep every factor and sort widest-swing first (the tornado shape). breakevenRentOnly()

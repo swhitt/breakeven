@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CalcInputs } from "../engine/calculator";
-import { computeSensitivity, drivingFactor } from "./sensitivity";
+import { breakevenRentOnly, type CalcInputs } from "../engine/calculator";
+import { buildFactors, computeSensitivity, drivingFactor } from "./sensitivity";
 
 // A realistic base, so the sweep runs the real engine end to end (no mocks).
 const base: CalcInputs = {
@@ -59,6 +59,36 @@ describe("computeSensitivity", () => {
     expect(maint).toBeDefined();
     // Maintenance scales the carrying cost, so widening its band actually moves the breakeven rent.
     expect(maint!.swing).toBeGreaterThan(0);
+  });
+
+  it("sweeps flat-mode maintenance in its native basis, so the center matches the model", () => {
+    // Appreciation != inflation, so a flat-dollar cost swept as percent-of-value would ride the
+    // wrong track and mis-center the bar. The factor's center rate must reproduce the real model.
+    const flatMaint: CalcInputs = {
+      ...base,
+      homeAppreciation: 0.08,
+      maintenance: { kind: "flatAnnual", annual: 4000 },
+    };
+    const maint = buildFactors(flatMaint).find((f) => f.label === "Maintenance")!;
+    // The factor's center (the implied rate = $4000 / $400k = 1%) should set maintenance back to
+    // its real value, so evaluating at the center reproduces the unswept model's breakeven.
+    const centerRate = flatMaint.maintenance.kind === "flatAnnual" ? flatMaint.maintenance.annual / flatMaint.homePrice : 0;
+    const atCenter = breakevenRentOnly(maint.set(flatMaint, centerRate));
+    expect(atCenter).toBeCloseTo(breakevenRentOnly(flatMaint), 4);
+    // And it stays flat-mode through the setter (rides inflation), not converted to pctOfValue.
+    expect(maint.set(flatMaint, centerRate).maintenance.kind).toBe("flatAnnual");
+  });
+
+  it("rounds the Years-you-stay endpoints to whole years the engine actually uses", () => {
+    // A fractional yearsToStay (reachable via a crafted share link) gets rounded inside the engine,
+    // so the swept endpoints must be whole years too, or the printed band and computed horizon
+    // would disagree.
+    const fractional: CalcInputs = { ...base, yearsToStay: 9.5 };
+    const years = buildFactors(fractional).find((f) => f.label === "Years you stay")!;
+    expect(Number.isInteger(years.lo)).toBe(true);
+    expect(Number.isInteger(years.hi)).toBe(true);
+    expect(years.lo).toBe(7); // round(6.5)
+    expect(years.hi).toBe(13); // round(12.5)
   });
 });
 

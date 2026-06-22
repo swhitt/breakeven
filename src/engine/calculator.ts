@@ -36,6 +36,18 @@ export function monthlyCostFromBasis(basis: CostBasis, homeValue: number, inflat
     : (homeValue * Math.max(0, basis.rate)) / 12;
 }
 
+/**
+ * The percent-of-value rate a basis implies at a given price: the rate itself for a pct entry,
+ * or the flat dollar figure over the price for a flat entry. `fallback` covers a zero/unknown
+ * price (no rate is derivable). The UI and the sensitivity sweep both need to show or seed a
+ * single rate regardless of which mode the cost was entered in, so this lives next to the
+ * CostBasis it interprets instead of being re-spelled per call site.
+ */
+export function impliedRate(basis: CostBasis, homePrice: number, fallback = 0): number {
+  if (basis.kind === "pctOfValue") return basis.rate;
+  return homePrice > 0 ? basis.annual / homePrice : fallback;
+}
+
 export interface CalcInputs {
   // Purchase
   homePrice: number;

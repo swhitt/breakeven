@@ -10,11 +10,12 @@ import type { LocationData } from "./data/types";
  * metro is cached in localStorage so we don't call it again.
  */
 export async function detectMetro(locations: LocationData[]): Promise<LocationData | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
+    // clearTimeout lives in finally so a fetch rejection (DNS failure, refused connection, CORS)
+    // can't leave the abort timer pending to fire on an already-settled controller.
     const res = await fetch("https://ipapi.co/json/", { signal: ctrl.signal });
-    clearTimeout(timer);
     if (!res.ok) return null;
 
     const geo = (await res.json()) as { country_code?: string; region_code?: string; city?: string };
@@ -38,5 +39,7 @@ export async function detectMetro(locations: LocationData[]): Promise<LocationDa
     return inState[0];
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

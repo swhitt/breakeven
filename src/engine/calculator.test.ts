@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breakevenRentOnly, calculate, monthlyMortgagePayment, pmiLtvMultiplier, type CalcInputs } from "./calculator";
+import { breakevenRentOnly, calculate, impliedRate, monthlyMortgagePayment, pmiLtvMultiplier, type CalcInputs } from "./calculator";
 
 const base: CalcInputs = {
   homePrice: 400000,
@@ -325,5 +325,20 @@ describe("breakevenRentOnly", () => {
     for (const c of cases) {
       expect(breakevenRentOnly(c)).toBeCloseTo(calculate(c).breakevenRent, 6);
     }
+  });
+});
+
+describe("impliedRate", () => {
+  it("returns the rate as-is for a pct-of-value basis", () => {
+    expect(impliedRate({ kind: "pctOfValue", rate: 0.011 }, 400000)).toBe(0.011);
+  });
+
+  it("derives flat-annual over price", () => {
+    expect(impliedRate({ kind: "flatAnnual", annual: 4000 }, 400000)).toBeCloseTo(0.01, 6);
+  });
+
+  it("uses the fallback when the price is zero (no rate is derivable)", () => {
+    expect(impliedRate({ kind: "flatAnnual", annual: 4000 }, 0, 0.02)).toBe(0.02);
+    expect(impliedRate({ kind: "flatAnnual", annual: 4000 }, 0)).toBe(0);
   });
 });
