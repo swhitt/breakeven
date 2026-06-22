@@ -241,6 +241,10 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // Monthly owning-vs-renting chart: show the owning line net of the tax benefit by default,
   // toggleable to the gross (pre-benefit) figure.
   const [ownNet, setOwnNet] = useState(true);
+  // Whether itemizing ever beats the standard deduction over the stay. When it doesn't, the
+  // owning-cost tax-break toggle has nothing to subtract, so the chart note flags the no-op
+  // instead of leaving the control looking broken.
+  const hasTaxBenefit = result.years.some((y) => y.taxBenefit > 0);
 
   // A ZIP refinement relabels the place to that ZIP's real city, so the headline, picker,
   // and share text never show the old metro name over the ZIP's numbers.
@@ -725,6 +729,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
                   PMI){ownNet ? " less the mortgage-interest and SALT tax break" : ""}, against the rent that year. Owning
                   holds roughly steady while rent climbs, so where they cross is when renting starts costing more each
                   month.
+                  {!hasTaxBenefit && (
+                    <> At these numbers itemizing doesn't beat the standard deduction, so there's no tax break to remove and this toggle won't move the line.</>
+                  )}
                 </>
               }
             >
@@ -1087,6 +1094,12 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
           )}
         </p>
       )}
+      {taxBenefit <= 0 && (
+        <p className="mt-1.5 text-xs text-muted">
+          No tax break at these numbers: the standard deduction beats itemizing, so "net" is the same as the full
+          payment.
+        </p>
+      )}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -1160,6 +1173,7 @@ function LedgerRow({
 function RatioRow({
   label,
   hint,
+  info,
   amount,
   pct: ratioPct,
   over,
@@ -1168,6 +1182,7 @@ function RatioRow({
 }: {
   label: string;
   hint?: string;
+  info?: string;
   amount: string;
   pct: number;
   over: boolean;
@@ -1177,9 +1192,10 @@ function RatioRow({
   return (
     <div className={total ? "border-t border-line/60 pt-2" : ""}>
       <div className="flex items-baseline justify-between gap-3">
-        <dt className={"text-sm " + (total ? "font-semibold text-ink" : "text-muted")}>
+        <dt className={"flex items-center text-sm " + (total ? "font-semibold text-ink" : "text-muted")}>
           {label}
           {hint && <span className="ml-1 font-normal text-muted">{hint}</span>}
+          {info && <InfoTip text={info} />}
         </dt>
         <dd className="tnum text-sm font-semibold text-ink">{amount}/mo</dd>
       </div>
@@ -1244,7 +1260,15 @@ function Affordability({
       </dl>
 
       <dl className="mt-4 space-y-2 border-t border-line/60 pt-4">
-        <RatioRow label="Housing payment" hint="PITI" amount={usd(housing)} pct={frontPct} over={frontOver} limit={28} />
+        <RatioRow
+          label="Housing payment"
+          hint="PITI"
+          info="PITI = principal, interest, taxes, and insurance, plus any HOA and PMI: the all-in monthly housing payment lenders qualify you against."
+          amount={usd(housing)}
+          pct={frontPct}
+          over={frontOver}
+          limit={28}
+        />
         <div className="flex items-center justify-between gap-3">
           <dt className="text-sm text-muted">
             Other monthly debt<span className="ml-1 font-normal text-muted">car, loans, cards</span>
@@ -1266,7 +1290,8 @@ function Affordability({
         {overGuideline ? (
           <>
             <span className="font-medium text-warn-text">Above the 28/36 guideline</span> lenders like to see, so this
-            may stretch the budget.
+            may stretch the budget. That's the conservative comfort line, not the approval cutoff; many loans still
+            qualify up to about 43% back-end debt-to-income with strong credit and reserves.
           </>
         ) : (
           <>Comfortably inside the 28/36 guideline lenders like to see.</>
