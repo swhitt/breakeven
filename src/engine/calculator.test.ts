@@ -70,6 +70,25 @@ describe("calculate", () => {
     expect(high.breakevenRent).toBeGreaterThan(low.breakevenRent);
   });
 
+  it("denies the IRC 121 exclusion on a sale inside two years", () => {
+    // A one-year gain (~$102k) that sits UNDER the single-filer $250k exclusion: a qualifying
+    // (2+ year) sale would shield it entirely, but a sub-2-year flip fails the 2-of-5 rule, so the
+    // gain is taxable and the cap-gains rate moves the year-1 net worth.
+    const quickFlip = { ...base, homePrice: 2_000_000, homeAppreciation: 0.15, yearsToStay: 1, filingJointly: false };
+    const noTax = calculate({ ...quickFlip, capitalGainsRate: 0 });
+    const taxed = calculate({ ...quickFlip, capitalGainsRate: 0.3 });
+    expect(taxed.netWorth[0].buyerNetWorth).toBeLessThan(noTax.netWorth[0].buyerNetWorth);
+  });
+
+  it("still applies the IRC 121 exclusion once the 2-of-5 hold is met", () => {
+    // Same kind of modest gain (~$116k, under the $250k exclusion) but held three years: it now
+    // qualifies, so the gain is shielded and the cap-gains rate leaves net worth untouched.
+    const held = { ...base, homePrice: 2_000_000, homeAppreciation: 0.05, yearsToStay: 3, filingJointly: false };
+    const noTax = calculate({ ...held, capitalGainsRate: 0 });
+    const taxed = calculate({ ...held, capitalGainsRate: 0.3 });
+    expect(taxed.netWorth[2].buyerNetWorth).toBeCloseTo(noTax.netWorth[2].buyerNetWorth, 6);
+  });
+
   it("longer horizons favor buying, so net cost lines cross at a finite breakeven year", () => {
     const r = calculate(base);
     expect(r.breakevenYear).not.toBeNull();

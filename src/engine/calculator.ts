@@ -304,11 +304,15 @@ interface BuySim {
  * truth for "what the buyer walks away with", shared by the headline sale, the breakdown
  * rows, and the net-worth chart so they can't drift.
  */
-function buyerNetWorthAt(inp: CalcInputs, homeValue: number, loanBalance: number): number {
+function buyerNetWorthAt(inp: CalcInputs, homeValue: number, loanBalance: number, holdYears: number): number {
   const closing = inp.homePrice * inp.buyingClosingPct;
   const sellingCosts = homeValue * inp.sellingCostPct;
   const gain = homeValue - sellingCosts - inp.homePrice - closing;
-  const exclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  // IRC 121 needs 2 of the last 5 years of ownership and use, so a sale inside two years gets
+  // no exclusion and is taxed on the full gain. (For the common owner-occupant hold past 2yr
+  // this is the usual $250k/$500k shield.)
+  const fullExclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  const exclusion = holdYears >= 2 ? fullExclusion : 0;
   const capGainsTax = inp.capitalGainsRate * Math.max(0, gain - exclusion);
   return homeValue - sellingCosts - loanBalance - capGainsTax;
 }
@@ -451,7 +455,7 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
   // sale point, so the shared helper computes them (basis = purchase price + buying closing,
   // symmetric with selling costs, with the IRC 121 exclusion applied inside).
   const saleValue = inp.homePrice * Math.pow(1 + inp.homeAppreciation, horizonYears);
-  const netProceeds = buyerNetWorthAt(inp, saleValue, balance);
+  const netProceeds = buyerNetWorthAt(inp, saleValue, balance, horizonYears);
   const saleDf = Math.pow(1 + disc, months);
   pv -= netProceeds / saleDf;
 
@@ -524,7 +528,7 @@ export function calculate(rawInp: CalcInputs): CalcResult {
     // Buyer wealth = net sale proceeds at year y. Renter wealth = that plus the future value
     // of buying's PV cost advantage, so the two cross in the exact breakeven year (same
     // identity as the per-row fill below, just across every horizon year).
-    const buyerNetWorth = buyerNetWorthAt(inp, sim.endHomeValue, sim.endBalance);
+    const buyerNetWorth = buyerNetWorthAt(inp, sim.endHomeValue, sim.endBalance, y);
     const renterNetWorth = buyerNetWorth + (sim.pvCost - r) * Math.pow(1 + disc, y * 12);
     netWorth.push({ year: y, buyerNetWorth, renterNetWorth });
     if (breakevenYear === null && sim.pvCost <= r) breakevenYear = y;
@@ -538,7 +542,7 @@ export function calculate(rawInp: CalcInputs): CalcResult {
       const yearIdx = Math.floor((m - 1) / 12);
       rentPaid += inp.monthlyRent * Math.pow(1 + inp.rentGrowth, yearIdx);
     }
-    const buyerNetWorth = buyerNetWorthAt(inp, r.homeValue, r.loanBalance);
+    const buyerNetWorth = buyerNetWorthAt(inp, r.homeValue, r.loanBalance, r.year);
     const pt = points[r.year - 1];
     const renterNetWorth = buyerNetWorth + (pt.buyNetCost - pt.rentNetCost) * Math.pow(1 + disc, r.year * 12);
     return { ...r, rentPaid, buyerNetWorth, renterNetWorth };
