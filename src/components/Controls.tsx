@@ -311,7 +311,9 @@ export function Controls({
       <SliderRow
         label="Down payment"
         value={inputs.downPaymentPct}
-        min={0}
+        // 3% is the real conventional floor (97% LTV); there's no 100% LTV conventional/jumbo
+        // product, so the slider doesn't let you model a loan no lender would write.
+        min={0.03}
         max={0.5}
         step={0.01}
         onChange={(n) => patch({ downPaymentPct: n })}

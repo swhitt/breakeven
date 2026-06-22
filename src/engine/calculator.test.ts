@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breakevenRentOnly, calculate, monthlyMortgagePayment, type CalcInputs } from "./calculator";
+import { breakevenRentOnly, calculate, monthlyMortgagePayment, pmiLtvMultiplier, type CalcInputs } from "./calculator";
 
 const base: CalcInputs = {
   homePrice: 400000,
@@ -117,6 +117,24 @@ describe("calculate", () => {
     const rising = sumPmi(calculate({ ...lowDown, homeAppreciation: 0.08 }));
     expect(rising).toBeLessThan(flat);
     expect(rising).toBeGreaterThan(0); // still charged in the early months, just fewer years
+  });
+
+  it("prices PMI off LTV, so a 3% down loan costs far more per month than a 15% down one", () => {
+    // Same base rate, but the multiplier steps up as the original LTV rises. Compare year-1
+    // PMI (before either has amortized into a different LTV band) at flat appreciation so the
+    // current-value trigger doesn't muddy the comparison.
+    const flat = { ...base, homeAppreciation: 0 };
+    const lowDown = calculate({ ...flat, downPaymentPct: 0.03 }).years[0].costs.pmi; // 97% LTV
+    const midDown = calculate({ ...flat, downPaymentPct: 0.15 }).years[0].costs.pmi; // 85% LTV
+    expect(lowDown).toBeGreaterThan(midDown);
+    // A 97% LTV loan should run multiples of an 85% one, not the same flat rate as before.
+    expect(lowDown / midDown).toBeGreaterThan(2);
+  });
+
+  it("pmiLtvMultiplier steps up monotonically with original LTV", () => {
+    expect(pmiLtvMultiplier(0.85)).toBeLessThan(pmiLtvMultiplier(0.92));
+    expect(pmiLtvMultiplier(0.92)).toBeLessThanOrEqual(pmiLtvMultiplier(0.96));
+    expect(pmiLtvMultiplier(0.96)).toBeLessThan(pmiLtvMultiplier(0.98));
   });
 
   it("tapers the SALT cap to the 2030 cliff instead of holding the entry-year value flat", () => {

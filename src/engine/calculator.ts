@@ -66,7 +66,7 @@ export interface CalcInputs {
   sellingCostPct: number; // of sale price, e.g. 0.06
 
   // Financing extras
-  pmiRate: number; // of original loan / yr while LTV > 80%, e.g. 0.0058
+  pmiRate: number; // base rate on original loan / yr while LTV > 80%, scaled by original LTV (see pmiLtvMultiplier), e.g. 0.0058
 
   // Taxes
   marginalTaxRate: number; // e.g. 0.24
@@ -148,16 +148,33 @@ export const RECURRING_COSTS = [
     // PMI runs while loan-to-value is over 80%. The LTV trigger is measured against the
     // CURRENT (appreciated) value, since servicers cancel as the home gains value, not just
     // as the loan amortizes. The premium itself is still priced off the original loan, the way
-    // servicers quote it. A flat or declining market won't cancel via appreciation here, only
-    // via principal paydown, which is the conservative real-world behavior.
+    // servicers quote it, and scaled by the ORIGINAL LTV: PMI is risk-priced, so a 97% LTV
+    // loan costs multiples of an 85% one (see pmiRateForLtv). A flat or declining market won't
+    // cancel via appreciation here, only via principal paydown, the conservative real behavior.
     key: "pmi",
     label: "PMI",
     side: "buy",
     deductibleSALT: false,
     inHousingPayment: true,
-    monthly: (i, c) => (c.loanBalance / c.homeValue > 0.8 ? (c.originalLoan * i.pmiRate) / 12 : 0),
+    monthly: (i, c) =>
+      c.loanBalance / c.homeValue > 0.8 ? (c.originalLoan * i.pmiRate * pmiLtvMultiplier(c.originalLoan / c.homePrice)) / 12 : 0,
   },
 ] as const satisfies readonly RecurringCost[];
+
+/**
+ * Risk multiplier on the base PMI rate, keyed off the ORIGINAL loan-to-value. Real PMI rate
+ * sheets price almost entirely off LTV (and credit, which we don't model): a 95-97% LTV loan
+ * runs roughly double an 85% one, and a 97%+ loan higher still. The base `pmiRate` (~0.58%)
+ * is calibrated to the 90-95% band, so the multiplier is ~1 there and steps up or down from it.
+ * A single flat rate massively understated the cost of a low-down purchase, which made a 3-5%
+ * down buy look far cheaper than a lender would ever price it.
+ */
+export function pmiLtvMultiplier(originalLtv: number): number {
+  if (originalLtv > 0.97) return 2.6; // ~1.5%+ effective, the high-balance-risk tier
+  if (originalLtv > 0.95) return 1.7; // ~1.0% effective, the 95-97 band
+  if (originalLtv > 0.9) return 1.0; // the band the base rate is calibrated to
+  return 0.7; // 80-90% LTV, where PMI is cheapest
+}
 
 // The registry is the single source of truth for cost keys. Deriving CostKey from it means
 // adding an entry above extends the type, and Record<CostKey, ...> consumers (the year row,
