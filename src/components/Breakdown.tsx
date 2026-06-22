@@ -346,11 +346,15 @@ export function Breakdown({
         </div>
         {/* On phones the table is wider than the screen; a right-edge fade signals there's more
             to scroll to, so half-cut numbers at the edge don't read as a rendering bug. Hidden
-            once the table fits the column (md+). */}
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-surface to-transparent md:hidden"
-          aria-hidden
-        />
+            once the table fits the column (md+). Also hidden while any year is expanded: the
+            pinned detail isn't horizontally scrollable, so the fade would just wash out its
+            right-column figures instead of hinting at off-screen content. */}
+        {open.size === 0 && (
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-surface to-transparent md:hidden"
+            aria-hidden
+          />
+        )}
       </div>
     </div>
   );

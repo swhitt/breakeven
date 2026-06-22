@@ -101,7 +101,7 @@ export const AdvantageChart = memo(function AdvantageChart({
 
   return (
     <ChartFrame ariaLabel={ariaLabel}>
-      <ComposedChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }} accessibilityLayer>
+      <ComposedChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }}>
         <defs>
           <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
             <stop offset={zeroOffset} stopColor="var(--color-buy)" stopOpacity={0.22} />

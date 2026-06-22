@@ -69,13 +69,6 @@
     outline-offset: 2px;
     border-radius: 2px;
   }
-  /* Recharts' accessibilityLayer makes the plot focusable, so a click draws a focus
-     ring nobody asked for. Drop it on mouse focus; keyboard users still get the ring
-     via :focus-visible above. */
-  .recharts-wrapper:focus:not(:focus-visible),
-  .recharts-surface:focus:not(:focus-visible) {
-    outline: none;
-  }
   /* Respect users who ask for less motion. */
   @media (prefers-reduced-motion: reduce) {
     html {
@@ -140,6 +133,30 @@ input[type="range"]::-moz-range-thumb {
   background: var(--color-surface);
   border: 2px solid var(--color-ink);
 }
+/* Touch devices have no hover and fat fingers, so grow small tap targets to clear the
+   WCAG 2.5.8 24px floor while leaving the visual size alone. The InfoTip "i" stays a 14px
+   disc; a centered transparent pseudo-element pads the hit area out to 24px. Pointer
+   devices keep the compact target. */
+@media (pointer: coarse) {
+  .infotip-btn {
+    position: relative;
+  }
+  .infotip-btn::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    height: 24px;
+    width: 24px;
+    transform: translate(-50%, -50%);
+  }
+  /* Lift the segmented toggles toward a comfortable ~40px touch height (they're ~32px by
+     default) without disturbing the desktop layout. */
+  .segmented-btn {
+    min-height: 38px;
+  }
+}
+
 /* Touch devices: grow the whole row to a ~44px tap target while keeping the visible
    track a thin 4px line (drawn as a centered gradient over a transparent box). The
    thumb centers itself, so tapping anywhere on the row still grabs the slider. Desktop

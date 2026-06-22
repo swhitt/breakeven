@@ -47,8 +47,16 @@ export function SensitivityChart({ rows, monthlyRent }: { rows: SensitivityRow[]
     const vals = rows.flatMap((d) => d.range).concat(monthlyRent);
     const min = Math.min(...vals);
     const max = Math.max(...vals);
-    const pad = (max - min) * 0.08 || 100;
-    const domain: [number, number] = [Math.max(0, min - pad), max + pad];
+    const span = max - min || 1000;
+    const pad = span * 0.08 || 100;
+    // The rent line is the verdict threshold and the most-read mark, so it shouldn't get
+    // pinned to a frame edge (with its "your rent" label clipping) when it happens to be the
+    // extreme value. Give whichever side it sits on enough room that the line stays >=15% of
+    // the span inside the plot, where the flip margin is actually legible.
+    const minGap = span * 0.15;
+    const left = Math.max(0, Math.min(min - pad, monthlyRent - minGap));
+    const right = Math.max(max + pad, monthlyRent + minGap);
+    const domain: [number, number] = [left, right];
     return { domain, ticks: niceTicks(domain[0], domain[1]) };
   }, [rows, monthlyRent]);
 
@@ -64,7 +72,7 @@ export function SensitivityChart({ rows, monthlyRent }: { rows: SensitivityRow[]
   return (
     <>
     <ChartFrame ariaLabel={ariaLabel}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 24 }} barCategoryGap="28%" accessibilityLayer>
+      <BarChart data={rows} layout="vertical" margin={{ top: 24, right: 12, left: 4, bottom: 24 }} barCategoryGap="28%">
         {/* Shade the two verdict sides around your rent line so which side a bar lands on reads
             pre-attentively, instead of the axis direction implying a winner. Drawn first, behind
             the grid and bars. ReferenceArea must be a direct child of the chart, not in a <>. */}

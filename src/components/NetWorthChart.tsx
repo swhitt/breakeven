@@ -93,7 +93,7 @@ export const NetWorthChart = memo(function NetWorthChart({
 
   return (
     <ChartFrame ariaLabel={ariaLabel}>
-      <LineChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }} accessibilityLayer>
+      <LineChart data={rows} margin={{ top: 16, right: 8, left: 4, bottom: 0 }}>
         <CartesianGrid stroke="var(--color-line)" vertical={false} />
         <XAxis
           dataKey="year"

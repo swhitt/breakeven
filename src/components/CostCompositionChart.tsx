@@ -149,7 +149,6 @@ export const CostCompositionChart = memo(function CostCompositionChart({ years }
           margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
           barCategoryGap="18%"
           stackOffset="sign"
-          accessibilityLayer
         >
           <CartesianGrid stroke="var(--color-line)" vertical={false} />
           <XAxis

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 /**
  * Field label + optional hint/live-data badge, wrapping any control. Defaults to a
@@ -66,27 +66,65 @@ export function Field({
 }
 
 /**
- * A small "i" affordance that reveals an explanation. A real focusable <button> with the
- * text mirrored into aria-label, so it's reachable by keyboard and screen readers (unlike a
- * bare title=); the visual bubble appears on hover AND focus, and on tap (focus) for touch.
- * The bubble drops downward so it isn't clipped by a horizontally-scrolling container.
+ * A small "i" affordance that reveals an explanation. A real focusable <button> with a SHORT
+ * accessible name ("More info") and the prose wired in via aria-describedby on a role="tooltip"
+ * bubble: when an InfoTip sits inside a heading or label, the button's name folds into the
+ * container's accessible name, so the prose must describe (not name) it, or a screen-reader
+ * user navigating by heading hears an entire paragraph where a 4-word title belongs.
+ *
+ * The bubble shows on hover/focus (desktop) and on a click toggle (touch, which has no
+ * hover-out, so a second tap or Escape closes it). It drops downward so it isn't clipped by a
+ * horizontally-scrolling container.
  */
 export function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const bubbleId = useId();
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  // Touch has no hover-out, so the only reliable dismiss is a click-outside or Escape. Wired
+  // only while open so we don't keep listeners on every tip on the page.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <span className="group/tip relative ml-1 inline-flex align-middle">
+    <span ref={wrapRef} className="group/tip relative ml-1 inline-flex align-middle">
       <button
         type="button"
-        aria-label={text}
-        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[9px] font-bold leading-none text-muted transition-colors hover:text-ink focus-visible:text-ink"
+        aria-label="More info"
+        aria-describedby={bubbleId}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        // infotip-btn lets index.css grow the hit area to >=24px on coarse pointers without
+        // changing the 14px visual "i" (the disc stays h-3.5/w-3.5; a transparent pseudo-box
+        // pads the tap target), so phones can hit it without zooming.
+        className="infotip-btn inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[9px] font-bold leading-none text-muted transition-colors hover:text-ink focus-visible:text-ink"
       >
         i
       </button>
       <span
-        aria-hidden="true"
+        id={bubbleId}
+        role="tooltip"
         // whitespace-normal/break-words are explicit because a label wrapper may set
         // whitespace-nowrap, which would otherwise make the bubble one long line that
-        // ignores its width and bleeds across the layout.
-        className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 w-56 max-w-[60vw] -translate-x-1/2 whitespace-normal break-words rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs font-normal normal-case leading-snug tracking-normal text-muted opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100"
+        // ignores its width and bleeds across the layout. Shown on hover/focus (desktop) or
+        // when toggled open (touch); the click toggle keeps it readable instead of flashing.
+        className={
+          "absolute left-1/2 top-full z-30 mt-1.5 w-56 max-w-[60vw] -translate-x-1/2 whitespace-normal break-words rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs font-normal normal-case leading-snug tracking-normal text-muted shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100 " +
+          (open ? "opacity-100" : "pointer-events-none opacity-0")
+        }
       >
         {text}
       </span>
@@ -230,7 +268,9 @@ export function Segmented<T extends string | number>({
           aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={
-            "rounded-md px-3 py-1.5 text-sm font-medium transition-colors " +
+            // segmented-btn lets index.css lift the height toward ~40px on coarse pointers
+            // (these sit packed next to sliders in Advanced), keeping desktop compact.
+            "segmented-btn rounded-md px-3 py-1.5 text-sm font-medium transition-colors " +
             (o.value === value ? "bg-ink text-paper" : "text-muted hover:text-ink")
           }
         >
@@ -250,7 +290,10 @@ export function Disclosure({ summary, children }: { summary: string; children: R
       <button
         type="button"
         aria-expanded={open}
-        aria-controls={id}
+        // aria-controls only while the panel is mounted: it's conditionally rendered, so
+        // pointing at its id while collapsed would be a dangling reference. aria-expanded
+        // still conveys the state when it's gone.
+        aria-controls={open ? id : undefined}
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold"
       >

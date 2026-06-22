@@ -33,7 +33,8 @@ export function LocationPicker({
   const [zipHit, setZipHit] = useState<{ zip: string; data: ZipData | null; loading: boolean } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const activeRef = useRef<HTMLButtonElement>(null);
+  // Points at the highlighted option's <li> (metro or ZIP) so it can be scrolled into view.
+  const activeRef = useRef<HTMLLIElement>(null);
   const listId = useId();
 
   const results = useMemo(() => {
@@ -213,9 +214,8 @@ export function LocationPicker({
             {/* A resolved ZIP is the first real option, so arrowing and aria-activedescendant
                 cover it the same way they cover the metros. */}
             {hasZipOption && (
-              <li role="option" id={`${listId}-opt-zip`} aria-selected={active === -1}>
+              <li role="option" id={`${listId}-opt-zip`} aria-selected={active === -1} ref={active === -1 ? activeRef : undefined}>
                 <button
-                  ref={active === -1 ? activeRef : undefined}
                   type="button"
                   tabIndex={-1}
                   onMouseEnter={() => setActive(-1)}
@@ -235,10 +235,11 @@ export function LocationPicker({
               </li>
             )}
             {results.map((loc, i) => (
-              <li key={loc.id} role="option" aria-selected={i === active}>
+              // id + active-row ref sit on the role="option" <li> (not the inner button), so
+              // aria-activedescendant resolves to the element that actually carries the option
+              // role and selected state, matching the ZIP option above.
+              <li key={loc.id} role="option" id={`${listId}-opt-${i}`} aria-selected={i === active} ref={i === active ? activeRef : undefined}>
                 <button
-                  ref={i === active ? activeRef : undefined}
-                  id={`${listId}-opt-${i}`}
                   type="button"
                   tabIndex={-1}
                   onMouseEnter={() => setActive(i)}
