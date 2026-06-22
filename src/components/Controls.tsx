@@ -328,7 +328,7 @@ export function Controls({
       />
 
       <SliderRow
-        label="How long you'll stay"
+        label="Years you stay"
         value={inputs.yearsToStay}
         min={1}
         max={30}

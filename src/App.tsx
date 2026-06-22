@@ -238,6 +238,16 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // rent). The callouts report this count instead of claiming a single "the one".
   const flipCount = sensitivity.filter((r) => r.flips).length;
 
+  // Whether the current inputs differ from this place's fresh defaults, so Reset can show it's
+  // actually got something to undo (otherwise it looks identical whether or not edits exist, and
+  // a returning visitor can't tell their reloaded numbers aren't fresh defaults). A shared view
+  // counts as "edited" since Reset exits it.
+  const hasEdits = useMemo(() => {
+    if (shareActive.current) return true;
+    const defaults = buildInputs(selected, market, propertyTax, insurance);
+    return Object.keys(diffOverrides(inputs, defaults)).length > 0;
+  }, [inputs, selected, market]);
+
   // Monthly owning-vs-renting chart: show the owning line net of the tax benefit by default,
   // toggleable to the gross (pre-benefit) figure.
   const [ownNet, setOwnNet] = useState(true);
@@ -250,16 +260,21 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // and share text never show the old metro name over the ZIP's numbers.
   const displayMetro = activeZip ? `${activeZip.city}, ${activeZip.state}` : selected.metro;
 
+  // The rent field auto-fills with the local typical rent. Until the user types their own, the
+  // verdict is computed against a market estimate, not their situation, so the hero and verdict
+  // soften their framing ("the typical local rent") instead of saying "your rent" about a number
+  // the user never entered. Equality with the live comparable rent is the signal it's untouched.
+  const sourceRent = activeZip ? activeZip.rent : selected.rent;
+  const rentIsEstimate = inputs.monthlyRent === sourceRent;
+
   // Announce the verdict to screen readers, debounced ~600ms so dragging a slider
   // doesn't fire a stream of interruptions: the polite region speaks once the numbers
   // settle. (Sighted users already see the live headline update.)
   const [announce, setAnnounce] = useState("");
   useEffect(() => {
-    const word = isCloseCall(result, inputs)
-      ? "Basically a toss-up"
-      : result.verdict === "rent"
-        ? "Renting wins"
-        : "Buying wins";
+    // Announce the same verdict word the sighted user reads (Buy it / Rent it / Toss-up), so
+    // the live region and the visible label don't drift into two different vocabularies.
+    const word = verdictLabel(result, inputs);
     const id = window.setTimeout(
       () => setAnnounce(`${word}. Breakeven rent ${usd(result.breakevenRent)} a month.`),
       600,
@@ -410,7 +425,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     // Flash a confirmation so the click clearly registers (the inputs may snap back
     // to values that already matched, leaving no other visible change).
     setJustReset(true);
-    setActionMsg("Reset to your location defaults");
+    setActionMsg("Reset to your location's defaults");
     window.setTimeout(() => {
       setJustReset(false);
       setActionMsg("");
@@ -556,7 +571,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
         <div aria-live="polite" className="sr-only">
           {actionMsg}
         </div>
-        <Hero metro={displayMetro} result={result} inputs={inputs} />
+        <Hero metro={displayMetro} result={result} inputs={inputs} rentIsEstimate={rentIsEstimate} />
 
         {/* On mobile the controls stack above the results, so surface a one-line
             verdict up top for immediate feedback (hidden on lg, where the full
@@ -571,12 +586,14 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
           <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-[72px] lg:self-start">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wide text-muted">Your situation</h2>
-              <div className="flex items-center gap-3">
+              {/* gap-4 + py-1.5 give Share/Reset a >=32px tap height and clearance from each
+                  other, so a fat-finger tap can't accidentally hit Reset (which wipes edits). */}
+              <div className="-my-1.5 flex items-center gap-4">
                 <button
                   type="button"
                   onClick={share}
                   title="Copy a link to this exact scenario"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+                  className="inline-flex items-center gap-1 py-1.5 text-xs font-medium text-muted transition-colors hover:text-ink"
                 >
                   <svg
                     className="h-3.5 w-3.5"
@@ -597,10 +614,12 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
                 <button
                   type="button"
                   onClick={reset}
-                  title="Reset to your location's defaults"
+                  title={hasEdits ? "Reset your edits to your location's defaults" : "Reset to your location's defaults"}
+                  // When edits exist, Reset goes ink with a dot so it's obviously live (and a
+                  // returning visitor can tell their reloaded numbers aren't fresh defaults).
                   className={
-                    "inline-flex items-center gap-1 text-xs font-medium transition-colors " +
-                    (justReset ? "text-rent-text" : "text-muted hover:text-ink")
+                    "inline-flex items-center gap-1 py-1.5 text-xs font-medium transition-colors " +
+                    (justReset ? "text-rent-text" : hasEdits ? "text-ink hover:text-ink" : "text-muted hover:text-ink")
                   }
                 >
                   {justReset ? (
@@ -630,6 +649,9 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
                     </svg>
                   )}
                   {justReset ? "Reset!" : "Reset"}
+                  {hasEdits && !justReset && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-buy" aria-hidden="true" />
+                  )}
                 </button>
               </div>
             </div>
@@ -646,7 +668,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
           </section>
 
           <section className="min-w-0 space-y-6">
-            <Verdict result={result} inputs={inputs} driver={driver} flipCount={flipCount} />
+            <Verdict result={result} inputs={inputs} driver={driver} flipCount={flipCount} rentIsEstimate={rentIsEstimate} />
 
             {/* Lead with the wealth chart right under the verdict so there's a real graph above
                 the fold. What you're actually worth is the question people feel; the payment and
@@ -815,7 +837,7 @@ function Header({ market }: { market: MarketData }) {
               e.preventDefault();
               goHome();
             }}
-            title="Reset to your city and defaults"
+            title="Reset to your location's defaults"
             className="rounded text-lg font-extrabold tracking-tight transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
           >
             <span className="text-rent">break</span>
@@ -858,31 +880,47 @@ function Header({ market }: { market: MarketData }) {
   );
 }
 
-function Hero({ metro, result, inputs }: { metro: string; result: CalcResult; inputs: AppInputs }) {
+function Hero({
+  metro,
+  result,
+  inputs,
+  rentIsEstimate,
+}: {
+  metro: string;
+  result: CalcResult;
+  inputs: AppInputs;
+  rentIsEstimate: boolean;
+}) {
   const renting = result.verdict === "rent";
   // Honor the same close-call threshold the Verdict card and announcer use, so the giant
   // headline can't shout a winner while the card right below it reads "Toss-up".
   const closeCall = isCloseCall(result, inputs);
+  // While the rent is still the auto-filled local typical, frame it as a market estimate rather
+  // than "rent" (the user's), so the giant headline can't imply a verdict about a number they
+  // never gave us.
+  const accent = closeCall ? "text-ink" : renting ? "text-rent" : "text-buy";
   return (
     <div className="pt-4 sm:pt-6">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted">
         Should you rent or buy in {metro}?
       </p>
       <h1 className="mt-2 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
-        {closeCall ? (
+        {rentIsEstimate ? (
           <>
-            At <span className="text-ink">{usd(inputs.monthlyRent)}/mo</span> rent, it's basically a toss-up.
-          </>
-        ) : renting ? (
-          <>
-            At <span className="text-rent">{usd(inputs.monthlyRent)}/mo</span> rent, renting comes out ahead.
+            At the typical local rent of <span className={accent}>{usd(inputs.monthlyRent)}/mo</span>,{" "}
           </>
         ) : (
           <>
-            At <span className="text-buy">{usd(inputs.monthlyRent)}/mo</span> rent, buying comes out ahead.
+            At <span className={accent}>{usd(inputs.monthlyRent)}/mo</span> rent,{" "}
           </>
         )}
+        {closeCall ? "it's basically a toss-up." : renting ? "renting comes out ahead." : "buying comes out ahead."}
       </h1>
+      {rentIsEstimate && (
+        <p className="mt-2 text-sm text-muted">
+          That's the local typical rent, auto-filled. Enter your actual rent for a verdict about you.
+        </p>
+      )}
     </div>
   );
 }
@@ -956,11 +994,13 @@ function Verdict({
   inputs,
   driver,
   flipCount,
+  rentIsEstimate,
 }: {
   result: CalcResult;
   inputs: AppInputs;
   driver: ReturnType<typeof drivingFactor>;
   flipCount: number;
+  rentIsEstimate: boolean;
 }) {
   const renting = result.verdict === "rent";
   const diff = Math.abs(result.monthlyDifference);
@@ -993,11 +1033,16 @@ function Verdict({
           </div>
           <div className="mt-1 text-2xl font-extrabold">{verdictLabel(result, inputs)}</div>
           <p className="mt-1 text-sm text-muted">
-            {closeCall
-              ? "Basically a wash, it comes down to a few assumptions."
-              : renting
-                ? `Your rent is ${usd(diff)}/mo under the breakeven rent, so renting comes out ahead.`
-                : `Your rent is ${usd(diff)}/mo over the breakeven rent, so buying comes out ahead.`}
+            {/* Don't say "Your rent" about the auto-filled estimate the user never entered;
+                call it the typical local rent until they type their own. */}
+            {(() => {
+              const subject = rentIsEstimate ? "The typical local rent" : "Your rent";
+              return closeCall
+                ? "Basically a wash, it comes down to a few assumptions."
+                : renting
+                  ? `${subject} is ${usd(diff)}/mo under the breakeven rent, so renting comes out ahead.`
+                  : `${subject} is ${usd(diff)}/mo over the breakeven rent, so buying comes out ahead.`;
+            })()}
           </p>
           {driver && (
             <p className="mt-2 text-xs text-muted">
@@ -1036,11 +1081,17 @@ function Verdict({
             .
           </p>
         </div>
-        <Stat label="Breakeven rent" value={`${usd(result.breakevenRent)}/mo`} sub="buying wins above this rent" />
+        <Stat
+          label="Breakeven rent"
+          value={`${usd(result.breakevenRent)}/mo`}
+          // Frame the threshold from the winning side: a renting verdict shouldn't keep
+          // explaining when buying would win.
+          sub={renting ? "renting wins below this rent" : "buying wins above this rent"}
+        />
         <Stat
           label="Breakeven horizon"
           value={result.breakevenYear == null ? "Never" : yearsLabel(result.breakevenYear)}
-          sub={result.breakevenYear == null ? "owning never catches up" : "stay longer, buying wins"}
+          sub={result.breakevenYear == null ? "renting stays ahead at every horizon" : "stay longer, buying wins"}
         />
       </div>
       <div className="grid grid-cols-2 border-t border-line bg-surface/60 sm:grid-cols-4">
