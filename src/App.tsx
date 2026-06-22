@@ -898,6 +898,23 @@ const isCloseCall = (result: CalcResult, inputs: CalcInputs) =>
 // comfortable line the affordability panel measures against.
 const DTI_FRONT_END_LIMIT = 0.28;
 const DTI_BACK_END_LIMIT = 0.36;
+// The QM safe-harbor back-end ceiling. Above this most lenders deny or kick to manual
+// underwrite, so a confident "Buy it" deserves a qualification caveat regardless of the
+// economic verdict. 36% is the comfort line; 43% is the approval wall.
+const DTI_QM_LIMIT = 0.43;
+
+// Back-end DTI (housing PITI + other debt over gross monthly income), or null when there's no
+// income or no loan to qualify. Shared by the verdict's qualification caveat and the
+// affordability panel so both read the same ratio.
+function backEndDti(result: CalcResult, inputs: AppInputs): number | null {
+  const y1 = result.years[0];
+  if (!y1 || inputs.annualIncome <= 0 || result.loanAmount <= 0) return null;
+  const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
+  const housing = result.monthlyPayment + lines.reduce((s, l) => s + l.monthly, 0);
+  const grossMonthly = inputs.annualIncome / 12;
+  if (grossMonthly <= 0) return null;
+  return (housing + inputs.otherMonthlyDebt) / grossMonthly;
+}
 const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
   isCloseCall(result, inputs) ? "Toss-up" : result.verdict === "rent" ? "Rent it" : "Buy it";
 
@@ -948,6 +965,11 @@ function Verdict({
   const renting = result.verdict === "rent";
   const diff = Math.abs(result.monthlyDifference);
   const closeCall = isCloseCall(result, inputs);
+  // A cheerful "Buy it" is dangerous if the borrower can't qualify for the loan. When the
+  // back-end DTI clears the 43% QM wall and the verdict isn't already "rent", flag that the
+  // economic answer ignores whether a lender would approve the payment.
+  const backDti = backEndDti(result, inputs);
+  const cantQualify = !renting && backDti != null && backDti > DTI_QM_LIMIT;
   // Cash due at the signing table, the number every monthly comparison quietly skips:
   // down payment + closing costs to buy, deposit + broker fee to rent.
   const buyUpfront = inputs.homePrice * (inputs.downPaymentPct + inputs.buyingClosingPct);
@@ -995,6 +1017,13 @@ function Verdict({
                   <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span> most of all.
                 </>
               )}
+            </p>
+          )}
+          {cantQualify && backDti != null && (
+            <p className="mt-2 text-xs text-warn-text">
+              <span className="font-semibold">Buying looks cheaper long-run, but at {Math.round(backDti * 100)}% back-end DTI</span>{" "}
+              most lenders won't approve this without compensating factors. The verdict is purely the rent-vs-buy math,
+              not a loan approval.
             </p>
           )}
           <p className="mt-3 border-t border-line pt-3 text-sm text-muted">
@@ -1234,10 +1263,11 @@ function Affordability({
 
   const debt = inputs.otherMonthlyDebt;
   const totalDebt = housing + debt;
-  // Round once and branch on the rounded value so the shown percent and the over/under verdict
-  // agree at the boundary (a 28.4% that displays "28%" shouldn't also read as "over the line").
-  const frontPct = Math.round((housing / grossMonthly) * 100);
-  const backPct = Math.round((totalDebt / grossMonthly) * 100);
+  // Show one decimal and branch on that same rounded value, so the displayed percent and the
+  // over/under verdict can never disagree at the boundary. (Rounding to a whole number let a raw
+  // 35.55% display "36%" while still reading "under the 36% line", a self-contradiction.)
+  const frontPct = Math.round((housing / grossMonthly) * 1000) / 10;
+  const backPct = Math.round((totalDebt / grossMonthly) * 1000) / 10;
   const frontOver = frontPct > DTI_FRONT_END_LIMIT * 100;
   const backOver = backPct > DTI_BACK_END_LIMIT * 100;
   const overGuideline = frontOver || backOver;
@@ -1287,7 +1317,13 @@ function Affordability({
       </dl>
 
       <p className="mt-3 text-sm text-muted">
-        {overGuideline ? (
+        {backPct > DTI_QM_LIMIT * 100 ? (
+          <>
+            <span className="font-medium text-warn-text">Past the ~43% back-end DTI line</span> most lenders treat as the
+            ceiling, so a standard loan likely won't approve this without a non-QM or portfolio product (or much stronger
+            credit, reserves, and down payment).
+          </>
+        ) : overGuideline ? (
           <>
             <span className="font-medium text-warn-text">Above the 28/36 guideline</span> lenders like to see, so this
             may stretch the budget. That's the conservative comfort line, not the approval cutoff; many loans still
