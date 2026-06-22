@@ -2,6 +2,7 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { calculate } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { usd } from "./lib/format";
+import { isCloseCall } from "./lib/verdict";
 import { ThemeToggle } from "./theme";
 import { Field, MoneyInput, Slider } from "./ui";
 import { insurance, market, propertyTax, usHome } from "./data/rates";
@@ -18,7 +19,7 @@ export function SimpleCalc() {
   const result = useMemo(() => calculate(inputs), [inputs]);
 
   const renting = result.verdict === "rent";
-  const closeCall = Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
+  const closeCall = isCloseCall(result, inputs);
   const verdict = closeCall ? "It's a toss-up" : renting ? "Rent" : "Buy";
   const accent = closeCall ? "text-ink" : renting ? "text-rent" : "text-buy";
   const aheadAmount = Math.abs(result.rentNetCost - result.buyNetCost);

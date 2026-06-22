@@ -94,6 +94,15 @@ export const STATE_OPTIONS: { code: string; name: string }[] = Object.entries(ST
   .map(([code, s]) => ({ code, name: s.name }))
   .sort((a, b) => a.name.localeCompare(b.name));
 
+/**
+ * Approximate taxable income: gross income net of the federal standard deduction, floored at 0.
+ * The federal-standard-deduction proxy is a documented simplification for the STATE side, where
+ * each state's own deductions vary; centralizing it here names the concept and keeps the caveat
+ * in one place instead of three copies.
+ */
+const taxableIncome = (income: number, status: "single" | "joint"): number =>
+  Math.max(0, income - STANDARD_DEDUCTION[status]);
+
 /** Marginal rate on the next taxable dollar for an ascending bracket schedule. */
 function marginalRate(brackets: Bracket[], taxable: number): number {
   for (const b of brackets) {
@@ -136,7 +145,7 @@ export function estimateMarginalRate(
   localRate = 0,
 ): MarginalEstimate {
   const status = filingJointly ? "joint" : "single";
-  const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
+  const taxable = taxableIncome(income, status);
   const federal = marginalRate(FEDERAL_BRACKETS[status], taxable);
   const st = STATE_TAX[stateCode];
   const state = st ? marginalRate(st[status], taxable) : 0;
@@ -159,7 +168,7 @@ export function estimateStateIncomeTax(
   localRate = 0,
 ): number {
   const status = filingJointly ? "joint" : "single";
-  const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
+  const taxable = taxableIncome(income, status);
   const st = STATE_TAX[stateCode];
   const stateTax = st ? bracketTax(st[status], taxable) : 0;
   const local = Number.isFinite(localRate) && localRate > 0 ? localRate * taxable : 0;
@@ -169,7 +178,7 @@ export function estimateStateIncomeTax(
 /** Total annual federal income tax (bracket tax on income net of the standard deduction). */
 export function estimateFederalIncomeTax(income: number, filingJointly: boolean): number {
   const status = filingJointly ? "joint" : "single";
-  const taxable = Math.max(0, income - STANDARD_DEDUCTION[status]);
+  const taxable = taxableIncome(income, status);
   return Math.round(bracketTax(FEDERAL_BRACKETS[status], taxable));
 }
 

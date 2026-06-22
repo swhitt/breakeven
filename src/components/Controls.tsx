@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { CostBasis } from "../engine/calculator";
+import { impliedRate, type CostBasis } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
 import { STANDARD_DEDUCTION } from "../engine/taxConstants";
 import { estimateMarginalRate, STATE_OPTIONS, STATE_TAX } from "../engine/taxRates";
@@ -77,7 +77,7 @@ function CostRow({
   const mode = basis.kind === "pctOfValue" ? "pct" : "amount";
   // Derive the other representation so the hint and a %/$ toggle have a seed and the
   // displayed figure never jumps across a mode switch.
-  const rate = basis.kind === "pctOfValue" ? basis.rate : homePrice > 0 ? basis.annual / homePrice : 0;
+  const rate = impliedRate(basis, homePrice);
   const annual = basis.kind === "flatAnnual" ? basis.annual : Math.round(homePrice * basis.rate);
   const setMode = (m: "pct" | "amount") => {
     if (m === mode) return;

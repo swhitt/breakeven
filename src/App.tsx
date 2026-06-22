@@ -15,6 +15,7 @@ import { yearsLabel, pct, usd } from "./lib/format";
 import { freshness } from "./lib/freshness";
 import { decodeShare, encodeShare } from "./lib/share";
 import { computeSensitivity, drivingFactor } from "./lib/sensitivity";
+import { isCloseCall, verdictLabel } from "./lib/verdict";
 import {
   cleanOverrides,
   diffOverrides,
@@ -925,11 +926,6 @@ function Hero({
   );
 }
 
-// Within 5% of the breakeven the verdict is a near-tie; below that the gap reads
-// like a real rent-vs-buy advantage worth naming.
-const isCloseCall = (result: CalcResult, inputs: CalcInputs) =>
-  Math.abs(result.monthlyDifference) < inputs.monthlyRent * 0.05;
-
 // The conventional 28/36 underwriting rule of thumb: lenders like housing costs at or under 28%
 // of gross monthly income (front-end), and total debt (housing plus car/student/card payments)
 // at or under 36% (back-end). Many programs stretch the back-end to ~43%, but 36% is the
@@ -953,9 +949,6 @@ function backEndDti(result: CalcResult, inputs: AppInputs): number | null {
   if (grossMonthly <= 0) return null;
   return (housing + inputs.otherMonthlyDebt) / grossMonthly;
 }
-const verdictLabel = (result: CalcResult, inputs: CalcInputs) =>
-  isCloseCall(result, inputs) ? "Toss-up" : result.verdict === "rent" ? "Rent it" : "Buy it";
-
 // A one-line verdict for mobile, shown above the controls so there's immediate
 // feedback without scrolling past every input first.
 function CondensedVerdict({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
