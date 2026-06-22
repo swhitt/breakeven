@@ -176,7 +176,9 @@ export function Breakdown({
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs text-muted">
-          Cumulative columns are in today's dollars. Tap any year for the full line-by-line math.{" "}
+          Cumulative columns are in today's dollars. The <span className="font-medium text-ink">Buy &minus; rent</span>{" "}
+          column is owning minus renting, so it stays positive while renting is still cheaper and turns negative the year
+          buying pulls ahead. Tap any year for the full line-by-line math.{" "}
           <span className="md:hidden">Scroll the table sideways to see every column.</span>
         </p>
         <button
