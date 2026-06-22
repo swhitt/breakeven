@@ -316,6 +316,7 @@ export function Controls({
         step={0.01}
         onChange={(n) => patch({ downPaymentPct: n })}
         format={(n) => pct(n, 0)}
+        info="PMI is private mortgage insurance: a monthly fee lenders add when you put down less than 20%. It protects the lender, not you, and drops off once you reach 20% equity. Adjust it in Advanced."
         hint={
           <span>
             {usd(downAmount)} down{" "}
@@ -503,6 +504,7 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ buyingClosingPct: n })}
             format={(n) => pct(n, 1)}
+            info="One-time costs to buy: lender and origination fees, title and escrow, appraisal, inspection, and prepaid taxes/insurance. Typically 2-5% of the price, so 3% is a mid-range default."
           />
           <SliderRow
             label="Selling costs"
@@ -512,6 +514,7 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ sellingCostPct: n })}
             format={(n) => pct(n, 1)}
+            info="What it costs to sell later: agent commissions plus title, escrow, and any transfer tax. Commissions are negotiable since the 2024 NAR settlement, so total selling costs increasingly run below the old 6% rule of thumb."
           />
           {/* These labels are long; the controls column narrows to 380px at lg, so
               stack them there to avoid the labels colliding (2-up in roomier widths). */}
