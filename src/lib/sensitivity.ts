@@ -6,17 +6,20 @@ import { pct } from "./format";
 // the assumptions your answer is most hostage to. This is the data behind the tornado
 // chart and the one-line "what your verdict leans on" callout, kept in one pure place
 // so both read identical numbers.
-// Only the numeric inputs are sweepable (lo/hi are numbers), so the key can't be a
-// CostBasis or boolean field. This catches a bad factor entry at the table, not three
-// calls deep inside calculate().
+// A factor sweeps a single scalar (lo..hi) into the inputs via `set`. Most factors target a
+// plain numeric field, but `set` also lets a structured field ride along (maintenance is a
+// CostBasis, not a bare number), so it isn't shut out of the tornado just for its shape.
 type NumericKey = { [K in keyof CalcInputs]: CalcInputs[K] extends number ? K : never }[keyof CalcInputs];
 
+// Default setter for the common case: overwrite one numeric field with the swept value.
+const setNumeric = (key: NumericKey) => (inp: CalcInputs, v: number): CalcInputs => ({ ...inp, [key]: v });
+
 export interface Factor {
-  key: NumericKey;
   label: string;
   lo: number;
   hi: number;
   fmt: (n: number) => string;
+  set: (inp: CalcInputs, value: number) => CalcInputs;
 }
 
 export interface SensitivityRow {
@@ -31,13 +34,30 @@ export interface SensitivityRow {
 
 export function buildFactors(inp: CalcInputs): Factor[] {
   const p1 = (n: number) => pct(n, 1);
+  // Maintenance can be entered as a flat dollar figure; sweep it as a percent of value either way
+  // (deriving the implied rate from a flat entry) so it sits alongside the other rate sweeps.
+  const maintRate =
+    inp.maintenance.kind === "pctOfValue"
+      ? inp.maintenance.rate
+      : inp.homePrice > 0
+        ? inp.maintenance.annual / inp.homePrice
+        : 0.01;
   return [
-    { key: "mortgageRate", label: "Mortgage rate", lo: Math.max(0, inp.mortgageRate - 0.015), hi: inp.mortgageRate + 0.015, fmt: (n) => pct(n, 2) },
-    { key: "investmentReturn", label: "Investment return", lo: Math.max(0, inp.investmentReturn - 0.02), hi: inp.investmentReturn + 0.02, fmt: p1 },
-    { key: "homeAppreciation", label: "Home appreciation", lo: inp.homeAppreciation - 0.02, hi: inp.homeAppreciation + 0.02, fmt: p1 },
-    { key: "yearsToStay", label: "Years you stay", lo: Math.max(1, inp.yearsToStay - 3), hi: inp.yearsToStay + 3, fmt: (n) => `${Math.round(n)}y` },
-    { key: "rentGrowth", label: "Rent growth", lo: Math.max(0, inp.rentGrowth - 0.015), hi: inp.rentGrowth + 0.015, fmt: p1 },
-    { key: "inflation", label: "Inflation", lo: Math.max(0, inp.inflation - 0.015), hi: inp.inflation + 0.015, fmt: p1 },
+    { label: "Mortgage rate", lo: Math.max(0, inp.mortgageRate - 0.015), hi: inp.mortgageRate + 0.015, fmt: (n) => pct(n, 2), set: setNumeric("mortgageRate") },
+    { label: "Investment return", lo: Math.max(0, inp.investmentReturn - 0.02), hi: inp.investmentReturn + 0.02, fmt: p1, set: setNumeric("investmentReturn") },
+    { label: "Home appreciation", lo: inp.homeAppreciation - 0.02, hi: inp.homeAppreciation + 0.02, fmt: p1, set: setNumeric("homeAppreciation") },
+    { label: "Years you stay", lo: Math.max(1, inp.yearsToStay - 3), hi: inp.yearsToStay + 3, fmt: (n) => `${Math.round(n)}y`, set: setNumeric("yearsToStay") },
+    { label: "Rent growth", lo: Math.max(0, inp.rentGrowth - 0.015), hi: inp.rentGrowth + 0.015, fmt: p1, set: setNumeric("rentGrowth") },
+    { label: "Inflation", lo: Math.max(0, inp.inflation - 0.015), hi: inp.inflation + 0.015, fmt: p1, set: setNumeric("inflation") },
+    // The 1-2%/yr maintenance rule of thumb is wide enough to move (sometimes flip) the verdict,
+    // so it belongs in the tornado rather than hiding in Advanced.
+    {
+      label: "Maintenance",
+      lo: Math.max(0, maintRate - 0.005),
+      hi: maintRate + 0.01,
+      fmt: p1,
+      set: (i, v) => ({ ...i, maintenance: { kind: "pctOfValue", rate: v } }),
+    },
   ];
 }
 
@@ -47,8 +67,8 @@ export function computeSensitivity(inputs: CalcInputs): SensitivityRow[] {
   const monthlyRent = inputs.monthlyRent;
   return buildFactors(inputs)
     .map((factor) => {
-      const loBreakeven = breakevenRentOnly({ ...inputs, [factor.key]: factor.lo });
-      const hiBreakeven = breakevenRentOnly({ ...inputs, [factor.key]: factor.hi });
+      const loBreakeven = breakevenRentOnly(factor.set(inputs, factor.lo));
+      const hiBreakeven = breakevenRentOnly(factor.set(inputs, factor.hi));
       const lo = Math.min(loBreakeven, hiBreakeven);
       const hi = Math.max(loBreakeven, hiBreakeven);
       return {

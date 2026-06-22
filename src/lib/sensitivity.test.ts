@@ -53,6 +53,13 @@ describe("computeSensitivity", () => {
       expect(r.flips).toBe(straddles);
     }
   });
+
+  it("sweeps maintenance as a factor (it can flip the verdict, so it belongs in the tornado)", () => {
+    const maint = rows.find((r) => r.label === "Maintenance");
+    expect(maint).toBeDefined();
+    // Maintenance scales the carrying cost, so widening its band actually moves the breakeven rent.
+    expect(maint!.swing).toBeGreaterThan(0);
+  });
 });
 
 describe("drivingFactor", () => {
