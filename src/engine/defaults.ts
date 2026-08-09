@@ -41,6 +41,10 @@ export function buildInputs(
   propertyTax: StateRateTable,
   insurance: StateRateTable,
   filingJointly = true,
+  // Sparse override table (CA/FL/MI) for states whose assessment cap resets at transfer; see
+  // the propertyTax default below. Optional and trailing so existing 4- and 5-arg callers keep
+  // the plain statewide behavior.
+  propertyTaxNewBuyer?: StateRateTable,
 ): AppInputs {
   return {
     homePrice: loc.homeValue,
@@ -55,7 +59,14 @@ export function buildInputs(
     investmentReturn: 0.06,
     inflation: clamp(market.inflation.rate, 0.01, 0.06),
 
-    propertyTax: { kind: "pctOfValue", rate: propertyTax[loc.state] ?? 0.011 },
+    // Prefer the new-buyer rate where one exists. The statewide table is median taxes paid over
+    // median home value, so in CA/FL/MI it averages in owners whose assessments are frozen by
+    // Prop 13 / Save Our Homes / Proposal A -- caps that reset at close and so never apply to
+    // the buyer we're modelling. CA is the extreme case, and the correction moves verdicts.
+    // Stays on pctOfValue deliberately: `propertyTax` is in LOCATION_FIELDS, and App re-points
+    // it on a metro switch only while the basis is still pctOfValue, so a system-set flatAnnual
+    // would survive a location change and thereafter read as a user edit.
+    propertyTax: { kind: "pctOfValue", rate: propertyTaxNewBuyer?.[loc.state] ?? propertyTax[loc.state] ?? 0.011 },
     maintenance: { kind: "pctOfValue", rate: 0.01 },
     homeInsurance: { kind: "pctOfValue", rate: insurance[loc.state] ?? 0.005 },
     hoaMonthly: 0,

@@ -18,6 +18,7 @@ const DATA_DIR = join(__dirname, "..", "src", "data");
 const MARKET_PATH = join(DATA_DIR, "market.json");
 const LOCATIONS_PATH = join(DATA_DIR, "locations.json");
 const PROPERTY_TAX_PATH = join(DATA_DIR, "propertyTax.json");
+const PROPERTY_TAX_NEW_BUYER_PATH = join(DATA_DIR, "propertyTaxNewBuyer.json");
 const INSURANCE_PATH = join(DATA_DIR, "insurance.json");
 const HISTORY_PATH = join(DATA_DIR, "history.json");
 
@@ -72,6 +73,36 @@ const PROPERTY_TAX = {
   OK: 0.008, OR: 0.0081, PA: 0.013, RI: 0.0121, SC: 0.0048, SD: 0.0106,
   TN: 0.005, TX: 0.0149, UT: 0.0052, VT: 0.0159, VA: 0.0073, WA: 0.0081,
   WV: 0.0053, WI: 0.0142, WY: 0.0057,
+};
+
+// ---------------------------------------------------------------------------
+// Property tax, new-buyer basis. The table above is median taxes paid over
+// median home value, so it describes the owners already in the houses. In most
+// states that's also what a buyer pays, because assessments track market value.
+// In three it isn't: CA, FL and MI cap assessment growth for the sitting owner
+// and reset that cap at transfer, so the statewide average is dragged down by
+// frozen assessments the buyer will never inherit. CA is the extreme: 0.70%
+// above versus a 1% Prop 13 base before any voter-approved debt, a gap wide
+// enough to flip a verdict on its own.
+//
+// Deliberately NOT here: OR, whose Measure 50 maximum assessed value does not
+// reset on sale, and TX, which reassesses at market annually for everyone. In
+// both the statewide rate is already the new-buyer rate, so an "adjustment"
+// would be a straight overstatement rather than a conservative one.
+//
+// Nobody publishes a per-state new-buyer effective-rate series, so each figure
+// is an estimate: the governing statute plus one published aggregate that
+// measures how much the cap is currently sheltering. Curated and baked in, like
+// the table above; these move on decade timescales.
+// ---------------------------------------------------------------------------
+const PROPERTY_TAX_NEW_BUYER = {
+  _source:
+    "Estimated effective rates for a buyer reassessed at close, by statute. " +
+    "CA: Prop 13 (Cal. Const. art. XIII A, sec. 1) 1% base plus voter-approved bonded indebtedness, at the CA Board of Equalization statewide average total ad valorem rate (~1.10%). " +
+    "FL: Save Our Homes 3% cap (Fla. Const. art. VII, sec. 4(d)) resets to just value on transfer; statewide rate grossed up by the FL DOR-reported Save Our Homes differential on homesteaded just value. " +
+    "MI: Proposal A (Mich. Const. art. IX, sec. 3; MCL 211.27a(3)) uncaps taxable value to 50% of true cash value the year after transfer; statewide rate grossed up by the MI Treasury taxable-value-to-SEV ratio.",
+  _asOf: "2026",
+  CA: 0.011, FL: 0.0105, MI: 0.014,
 };
 
 // ---------------------------------------------------------------------------
@@ -692,12 +723,16 @@ async function main() {
   await writeFile(MARKET_PATH, JSON.stringify(newMarket, null, 2) + "\n");
   await writeFile(LOCATIONS_PATH, JSON.stringify(zillow.locations, null, 2) + "\n");
   await writeFile(PROPERTY_TAX_PATH, JSON.stringify(PROPERTY_TAX, null, 2) + "\n");
+  await writeFile(PROPERTY_TAX_NEW_BUYER_PATH, JSON.stringify(PROPERTY_TAX_NEW_BUYER, null, 2) + "\n");
   await writeFile(INSURANCE_PATH, JSON.stringify(INSURANCE, null, 2) + "\n");
   await saveHistory(newMarket, summary);
 
   console.log("\n=== fetch-data summary ===");
   for (const line of summary) console.log("  " + line);
   console.log(`  propertyTax: wrote ${Object.keys(PROPERTY_TAX).length - 2} states/DC (curated)`);
+  console.log(
+    `  propertyTaxNewBuyer: wrote ${Object.keys(PROPERTY_TAX_NEW_BUYER).length - 2} reset-at-transfer states (curated)`,
+  );
   console.log(`  insurance: wrote ${Object.keys(INSURANCE).length - 2} states/DC (curated)`);
   console.log("==========================\n");
 }

@@ -72,16 +72,55 @@ function checkZips(zips) {
   if (keys.length < 1000) fail(`zips.json: only ${keys.length} ZIPs (expected thousands)`);
 }
 
+// The curated state-rate tables (property tax, new-buyer property tax, insurance) are hand-
+// maintained constants in fetch-data.mjs rather than fetched, so the failure mode isn't a
+// schema change upstream, it's an edit that drops states, fat-fingers a decimal place, or
+// strips the _source provenance the UI cites. Gate all three on shape, size and band.
+// `name` is the filename, `expectKeys` either an exact list of state codes or a minimum count.
+function checkRateTable(name, table, expectKeys) {
+  if (!table || typeof table !== "object" || Array.isArray(table)) return fail(`${name}: not a keyed object`);
+  if (!isStr(table._source)) fail(`${name}: missing _source (every rate we show has to be attributable)`);
+  if (!isStr(table._asOf)) fail(`${name}: missing _asOf`);
+
+  const states = Object.keys(table).filter((k) => !k.startsWith("_"));
+  if (Array.isArray(expectKeys)) {
+    // Exact membership: this table is a deliberate short list, and both a missing state and a
+    // stray extra one are real errors (an extra state means we're adjusting somewhere the
+    // adjustment doesn't apply, which overstates that buyer's taxes).
+    const extra = states.filter((s) => !expectKeys.includes(s));
+    const missing = expectKeys.filter((s) => !states.includes(s));
+    if (extra.length) fail(`${name}: unexpected state(s) ${extra.join(", ")} (expected exactly ${expectKeys.join(", ")})`);
+    if (missing.length) fail(`${name}: missing state(s) ${missing.join(", ")}`);
+  } else if (states.length < expectKeys) {
+    fail(`${name}: only ${states.length} states (expected ${expectKeys}+, entries likely dropped)`);
+  }
+
+  // 0.05% to 5% of value per year spans every real US state rate with room to spare, so a hit
+  // here is a typo (0.11 for 0.011) rather than a genuine outlier.
+  const bad = states.filter((s) => !inBand(table[s], 0.0005, 0.05));
+  if (bad.length) fail(`${name}: rate out of band for ${bad.map((s) => `${s}=${table[s]}`).join(", ")}`);
+}
+
 const market = await readJson("src/data/market.json");
 const locations = await readJson("src/data/locations.json");
 const zips = await readJson("public/zips.json");
+const propertyTax = await readJson("src/data/propertyTax.json");
+const propertyTaxNewBuyer = await readJson("src/data/propertyTaxNewBuyer.json");
+const insurance = await readJson("src/data/insurance.json");
 if (market) checkMarket(market);
 if (locations) checkLocations(locations);
 if (zips) checkZips(zips);
+if (propertyTax) checkRateTable("propertyTax.json", propertyTax, 51);
+// CA, FL and MI only: the states whose assessment cap resets at transfer. OR (Measure 50 MAV
+// survives a sale) and TX (annual market reassessment) must never appear here.
+if (propertyTaxNewBuyer) checkRateTable("propertyTaxNewBuyer.json", propertyTaxNewBuyer, ["CA", "FL", "MI"]);
+if (insurance) checkRateTable("insurance.json", insurance, 51);
 
 if (errors.length) {
   console.error("Data validation FAILED:");
   for (const e of errors) console.error(`  - ${e}`);
   process.exit(1);
 }
-console.log("Data validation passed: market.json, locations.json, zips.json all within sane bounds.");
+console.log(
+  "Data validation passed: market.json, locations.json, zips.json, propertyTax.json, propertyTaxNewBuyer.json, insurance.json all within sane bounds.",
+);

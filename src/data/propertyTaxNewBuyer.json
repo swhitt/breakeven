@@ -1,0 +1,7 @@
+{
+  "_source": "Estimated effective rates for a buyer reassessed at close, by statute. CA: Prop 13 (Cal. Const. art. XIII A, sec. 1) 1% base plus voter-approved bonded indebtedness, at the CA Board of Equalization statewide average total ad valorem rate (~1.10%). FL: Save Our Homes 3% cap (Fla. Const. art. VII, sec. 4(d)) resets to just value on transfer; statewide rate grossed up by the FL DOR-reported Save Our Homes differential on homesteaded just value. MI: Proposal A (Mich. Const. art. IX, sec. 3; MCL 211.27a(3)) uncaps taxable value to 50% of true cash value the year after transfer; statewide rate grossed up by the MI Treasury taxable-value-to-SEV ratio.",
+  "_asOf": "2026",
+  "CA": 0.011,
+  "FL": 0.0105,
+  "MI": 0.014
+}

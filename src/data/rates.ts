@@ -2,6 +2,7 @@ import type { LocationData, MarketData, StateRateTable } from "./types";
 import locationsRaw from "./locations.json";
 import marketRaw from "./market.json";
 import propertyTaxRaw from "./propertyTax.json";
+import propertyTaxNewBuyerRaw from "./propertyTaxNewBuyer.json";
 import insuranceRaw from "./insurance.json";
 
 // A plain typed assignment (not a cast): market.json must structurally satisfy MarketData,
@@ -16,6 +17,12 @@ export const market: MarketData = marketRaw;
 export const locations = locationsRaw as LocationData[];
 export const propertyTax = propertyTaxRaw as unknown as StateRateTable;
 export const insurance = insuranceRaw as unknown as StateRateTable;
+
+// Overrides for the three states (CA/FL/MI) that cap assessment growth for the sitting owner
+// and reset that cap at transfer, where `propertyTax` above (median taxes paid / median value)
+// describes frozen assessments a buyer never inherits. Sparse on purpose: a state absent here
+// has no reset to correct for, so lookups fall through to the statewide table.
+export const propertyTaxNewBuyer = propertyTaxNewBuyerRaw as unknown as StateRateTable;
 
 // The national row: the baseline every "reset to my area" fallback and first-paint snapshot
 // starts from when no metro is detected yet.

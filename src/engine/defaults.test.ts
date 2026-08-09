@@ -11,9 +11,12 @@ const market: MarketData = {
   appreciation: { rate1yr: 0.03, rate5yrCagr: 0.04, asOf: "2026-04", source: "Zillow" },
   national: { homeValue: 368000, rent: 1930, asOf: "2026-04", source: "Zillow" },
 };
-const propertyTax: StateRateTable = { TX: 0.018, US: 0.011 };
-const insurance: StateRateTable = { TX: 0.008, US: 0.005 };
+const propertyTax: StateRateTable = { CA: 0.007, TX: 0.018, US: 0.011 };
+const insurance: StateRateTable = { CA: 0.0038, TX: 0.008, US: 0.005 };
+// Sparse by design: only the states whose assessment cap resets at transfer appear.
+const propertyTaxNewBuyer: StateRateTable = { CA: 0.011, FL: 0.0105, MI: 0.014 };
 const houston: LocationData = { id: "houston-tx", metro: "Houston, TX", state: "TX", homeValue: 300000, rent: 1600 };
+const losAngeles: LocationData = { id: "los-angeles-ca", metro: "Los Angeles, CA", state: "CA", homeValue: 950000, rent: 4501 };
 
 describe("buildInputs", () => {
   it("seeds price, rent, state, and the live mortgage rate from the inputs", () => {
@@ -40,6 +43,38 @@ describe("buildInputs", () => {
     const inp = buildInputs({ ...houston, state: "ZZ" }, market, propertyTax, insurance);
     expect(inp.propertyTax).toEqual({ kind: "pctOfValue", rate: 0.011 });
     expect(inp.homeInsurance).toEqual({ kind: "pctOfValue", rate: 0.005 });
+  });
+
+  it("prefers the new-buyer property-tax rate where the assessment cap resets at transfer", () => {
+    const inp = buildInputs(losAngeles, market, propertyTax, insurance, true, propertyTaxNewBuyer);
+    // 1.1% (Prop 13 base + voter-approved debt), not the 0.7% statewide median-of-medians.
+    expect(inp.propertyTax).toEqual({ kind: "pctOfValue", rate: 0.011 });
+    // Insurance is unaffected: no assessment cap involved, so it still comes from its own table.
+    expect(inp.homeInsurance).toEqual({ kind: "pctOfValue", rate: 0.0038 });
+  });
+
+  it("keeps the statewide rate in states that already reassess at market, like TX", () => {
+    const inp = buildInputs(houston, market, propertyTax, insurance, true, propertyTaxNewBuyer);
+    expect(inp.propertyTax).toEqual({ kind: "pctOfValue", rate: 0.018 });
+  });
+
+  it("leaves a state absent from the new-buyer table on the statewide rate", () => {
+    const seattle: LocationData = { ...houston, id: "seattle-wa", metro: "Seattle, WA", state: "WA" };
+    const withOverrides = buildInputs(seattle, market, { ...propertyTax, WA: 0.0081 }, insurance, true, propertyTaxNewBuyer);
+    expect(withOverrides.propertyTax).toEqual({ kind: "pctOfValue", rate: 0.0081 });
+    // And an unknown state still lands on the shared 1.1% default rather than on an override.
+    const unknown = buildInputs({ ...houston, state: "ZZ" }, market, propertyTax, insurance, true, propertyTaxNewBuyer);
+    expect(unknown.propertyTax).toEqual({ kind: "pctOfValue", rate: 0.011 });
+  });
+
+  it("ignores the new-buyer table when callers omit it, keeping the old 4-arg contract", () => {
+    expect(buildInputs(losAngeles, market, propertyTax, insurance).propertyTax).toEqual({ kind: "pctOfValue", rate: 0.007 });
+  });
+
+  it("keeps the pctOfValue basis for the new-buyer rate so a metro switch can re-point it", () => {
+    // LOCATION_FIELDS carries propertyTax across location changes, and App only re-points it
+    // while the basis is pctOfValue; a system-set flatAnnual would strand and read as an edit.
+    expect(buildInputs(losAngeles, market, propertyTax, insurance, true, propertyTaxNewBuyer).propertyTax.kind).toBe("pctOfValue");
   });
 
   it("clamps inflation into a sane band", () => {
