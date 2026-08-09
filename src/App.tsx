@@ -1,5 +1,5 @@
 import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { calculate, housingPaymentLines, type CalcInputs, type CalcResult } from "./engine/calculator";
+import { breakevenYearOnly, calculate, housingPaymentLines, type CalcResult } from "./engine/calculator";
 import { CHART_HEIGHT_CLASS } from "./components/chart/ChartFrame";
 import { useInView } from "./lib/useInView";
 import { buildInputs, type AppInputs } from "./engine/defaults";
@@ -15,7 +15,17 @@ import { yearsLabel, pct, usd } from "./lib/format";
 import { freshness } from "./lib/freshness";
 import { decodeShare, encodeShare } from "./lib/share";
 import { computeSensitivity, drivingFactor } from "./lib/sensitivity";
-import { isCloseCall, verdictLabel } from "./lib/verdict";
+import { verdictConfidence, verdictLabel, type VerdictConfidence } from "./lib/verdict";
+import {
+  backEndDti,
+  housingPayment,
+  maxPriceForDti,
+  DTI_BACK_END_LIMIT,
+  DTI_FRONT_END_LIMIT,
+  DTI_QM_LIMIT,
+} from "./lib/affordability";
+import { clipNetWorth } from "./lib/netWorthWindow";
+import { pivotAppreciation, pricedLikeLocal, type AppreciationPivot } from "./lib/scenario";
 import {
   cleanOverrides,
   diffOverrides,
@@ -27,16 +37,13 @@ import { ThemeToggle } from "./theme";
 import { detectMetro } from "./geo";
 import { fetchLiveMarket } from "./data/live";
 import type { LocationData, MarketData } from "./data/types";
-import { insurance, locations, market as bundledMarket, propertyTax, usHome } from "./data/rates";
+import { insurance, locations, market as bundledMarket, propertyTax, propertyTaxNewBuyer, usHome } from "./data/rates";
 
 
 // Recharts (+d3) is ~half the bundle and only used below the fold, so load it
 // lazily off the critical path. The four charts share one chunk; ChartCard gates each
 // behind an IntersectionObserver so the chunk only loads once a chart nears the viewport.
 const NetWorthChart = lazy(() => import("./components/NetWorthChart").then((m) => ({ default: m.NetWorthChart })));
-const AdvantageChart = lazy(() =>
-  import("./components/AdvantageChart").then((m) => ({ default: m.AdvantageChart })),
-);
 const CostCompositionChart = lazy(() =>
   import("./components/CostCompositionChart").then((m) => ({ default: m.CostCompositionChart })),
 );
@@ -151,7 +158,7 @@ function readShareLink(): { loc: LocationData; overrides: Partial<AppInputs> } |
     const payload = decodeShare(token);
     if (!payload) return null;
     const loc = (payload.m ? locations.find((l) => l.id === payload.m) : null) ?? usHome;
-    const ref = buildInputs(usHome, bundledMarket, propertyTax, insurance);
+    const ref = buildInputs(usHome, bundledMarket, propertyTax, insurance, true, propertyTaxNewBuyer);
     return { loc, overrides: overridesFromShare(payload.o ?? {}, ref) };
   } catch {
     return null;
@@ -199,7 +206,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   const [market, setMarket] = useState<MarketData>(() => bundledMarket);
   const [selected, setSelected] = useState<LocationData>(() => startLoc);
   const [inputs, setInputs] = useState<AppInputs>(() => ({
-    ...buildInputs(startLoc, bundledMarket, propertyTax, insurance),
+    ...buildInputs(startLoc, bundledMarket, propertyTax, insurance, true, propertyTaxNewBuyer),
     ...overrides.current, // restore the user's remembered edits, or the shared ones
   }));
 
@@ -239,13 +246,38 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // rent). The callouts report this count instead of claiming a single "the one".
   const flipCount = sensitivity.filter((r) => r.flips).length;
 
+  // One verdict word for every surface that prints one (hero, verdict card, the mobile
+  // condensed card, the announcer, the share text), so the page can't shout "Buy it" over a
+  // footnote saying three assumptions could each flip it.
+  //
+  // Deferred-value seam: flipCount rides the sensitivity sweep off `deferredInputs`, while
+  // `result` is fresh every frame. Pairing the two would let the word flicker mid-drag (a fresh
+  // "Buy it" for one frame, then "Toss-up" when the sweep catches up). Both halves are read from
+  // the SAME deferred generation instead, which costs the word a frame of lag behind the dollar
+  // figures during a drag and buys a word that is never internally inconsistent. React updates
+  // both deferred values in the one low-priority pass, so they can't straddle generations.
+  const confidence = verdictConfidence(deferredResult, deferredInputs, flipCount);
+  const verdictWord = verdictLabel(deferredResult, deferredInputs, flipCount);
+
+  // The appreciation rate the verdict turns on, printed in the same driving-factor line the
+  // tornado feeds. It bisects the engine ~20 times, so it rides the same deferred generation as
+  // the sweep it prints beside rather than re-running on every drag frame.
+  const pivot = useMemo(() => pivotAppreciation(deferredInputs), [deferredInputs]);
+
+  // The breakeven horizon in a market that goes nowhere, the downside half of the range the
+  // "Breakeven horizon" stat quotes. Computed from the FRESH inputs, not the deferred ones,
+  // because it shares a stat with result.breakevenYear: a deferred copy could momentarily print
+  // a flat-market horizon shorter than the real one, which is impossible and reads as a bug.
+  // It's a lean sweep that stops at the first crossing, so it costs about one extra calculate().
+  const flatMarketYear = useMemo(() => breakevenYearOnly({ ...inputsForCalc, homeAppreciation: 0 }), [inputsForCalc]);
+
   // Whether the current inputs differ from this place's fresh defaults, so Reset can show it's
   // actually got something to undo (otherwise it looks identical whether or not edits exist, and
   // a returning visitor can't tell their reloaded numbers aren't fresh defaults). A shared view
   // counts as "edited" since Reset exits it.
   const hasEdits = useMemo(() => {
     if (shareActive.current) return true;
-    const defaults = buildInputs(selected, market, propertyTax, insurance);
+    const defaults = buildInputs(selected, market, propertyTax, insurance, true, propertyTaxNewBuyer);
     return Object.keys(diffOverrides(inputs, defaults)).length > 0;
   }, [inputs, selected, market]);
 
@@ -265,8 +297,19 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // verdict is computed against a market estimate, not their situation, so the hero and verdict
   // soften their framing ("the typical local rent") instead of saying "your rent" about a number
   // the user never entered. Equality with the live comparable rent is the signal it's untouched.
+  //
+  // Untouched isn't enough on its own, though: the auto-filled rent is what a typical LOCAL home
+  // rents for, so once the price has been edited away from that home the rent describes a
+  // different house and the page has to stop asserting it's the comparable. Three states, not
+  // two, because the fix for a stale rent ("enter one for a home at this price") is different
+  // advice from the fix for an untouched one ("enter yours"). The ZIP path patches price and rent
+  // together, so only a manual price edit can land here.
   const sourceRent = activeZip ? activeZip.rent : selected.rent;
-  const rentIsEstimate = inputs.monthlyRent === sourceRent;
+  const sourcePrice = activeZip ? activeZip.homeValue : selected.homeValue;
+  const rentIsAutoFilled = inputs.monthlyRent === sourceRent;
+  const priceIsLocal = pricedLikeLocal(inputs.homePrice, sourcePrice);
+  const rentIsEstimate = rentIsAutoFilled && priceIsLocal;
+  const rentMismatch = rentIsAutoFilled && !priceIsLocal;
 
   // Announce the verdict to screen readers, debounced ~600ms so dragging a slider
   // doesn't fire a stream of interruptions: the polite region speaks once the numbers
@@ -275,13 +318,12 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   useEffect(() => {
     // Announce the same verdict word the sighted user reads (Buy it / Rent it / Toss-up), so
     // the live region and the visible label don't drift into two different vocabularies.
-    const word = verdictLabel(result, inputs);
     const id = window.setTimeout(
-      () => setAnnounce(`${word}. Breakeven rent ${usd(result.breakevenRent)} a month.`),
+      () => setAnnounce(`${verdictWord}. Breakeven rent ${usd(result.breakevenRent)} a month.`),
       600,
     );
     return () => window.clearTimeout(id);
-  }, [result, inputs]);
+  }, [verdictWord, result.breakevenRent]);
 
   // A /metro deep-link gets a metro-specific tab title (the static HTML still carries
   // the generic one for crawlers until the per-metro prerender lands).
@@ -412,7 +454,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
     setSelected(loc);
     setActiveZip(null);
     saveActiveZip(null);
-    setInputs(buildInputs(loc, market, propertyTax, insurance));
+    setInputs(buildInputs(loc, market, propertyTax, insurance, true, propertyTaxNewBuyer));
     try {
       localStorage.setItem(METRO_KEY, loc.id);
     } catch {
@@ -478,14 +520,11 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
   // user changed from that metro's defaults (so the link stays short and re-derives
   // everything else from live data on open).
   async function share() {
-    const defaults = buildInputs(selected, market, propertyTax, insurance);
+    const defaults = buildInputs(selected, market, propertyTax, insurance, true, propertyTaxNewBuyer);
     const o = diffOverrides(inputs, defaults);
     const url = `${window.location.origin}${window.location.pathname}?s=${encodeShare({ m: selected.id, o })}`;
-    const verb = isCloseCall(result, inputs)
-      ? "it's basically a coin flip"
-      : result.verdict === "rent"
-        ? "renting wins"
-        : "buying wins";
+    const verb =
+      confidence === "toss-up" ? "it's basically a coin flip" : confidence === "rent" ? "renting wins" : "buying wins";
     const text = `Rent vs. buy in ${displayMetro}: at ${usd(inputs.monthlyRent)}/mo, ${verb}. Breakeven rent ${usd(result.breakevenRent)}/mo.`;
 
     // On touch devices the OS share sheet beats a silent clipboard copy. On desktop we
@@ -522,7 +561,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
       setMarket(live);
       if (!touched.current && Object.keys(overrides.current).length === 0) {
         const loc = locations.find((l) => l.id === selectedRef.current) ?? selected;
-        setInputs(buildInputs(loc, live, propertyTax, insurance));
+        setInputs(buildInputs(loc, live, propertyTax, insurance, true, propertyTaxNewBuyer));
       }
     });
     return () => {
@@ -572,13 +611,20 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
         <div aria-live="polite" className="sr-only">
           {actionMsg}
         </div>
-        <Hero metro={displayMetro} result={result} inputs={inputs} rentIsEstimate={rentIsEstimate} />
+        <Hero
+          metro={displayMetro}
+          confidence={confidence}
+          inputs={inputs}
+          rentIsEstimate={rentIsEstimate}
+          rentMismatch={rentMismatch}
+          typicalPrice={sourcePrice}
+        />
 
         {/* On mobile the controls stack above the results, so surface a one-line
             verdict up top for immediate feedback (hidden on lg, where the full
             Verdict sits beside the controls). */}
         <div className="mt-4 lg:hidden">
-          <CondensedVerdict result={result} inputs={inputs} />
+          <CondensedVerdict result={result} confidence={confidence} word={verdictWord} />
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-6 lg:mt-6 lg:grid-cols-[minmax(0,380px)_1fr]">
@@ -669,7 +715,18 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
           </section>
 
           <section className="min-w-0 space-y-6">
-            <Verdict result={result} inputs={inputs} driver={driver} flipCount={flipCount} rentIsEstimate={rentIsEstimate} />
+            <Verdict
+              result={result}
+              inputs={inputs}
+              confidence={confidence}
+              word={verdictWord}
+              driver={driver}
+              flipCount={flipCount}
+              rentIsEstimate={rentIsEstimate}
+              pivot={pivot}
+              ranAppreciation={activeZip ? activeZip.appreciation5yr : selected.appreciation5yr}
+              flatMarketYear={flatMarketYear}
+            />
 
             {/* Lead with the wealth chart right under the verdict so there's a real graph above
                 the fold. What you're actually worth is the question people feel; the payment and
@@ -680,13 +737,21 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               note={
                 <>
                   Your wealth if you sold and moved out after each year. Buying is home equity after selling costs and
-                  capital-gains tax. Renting is the down payment plus monthly savings, invested at your after-tax return.
-                  They cross the same year buying pulls ahead.
+                  capital-gains tax. Renting is the down payment plus monthly savings, invested at your after-tax return,
+                  less the rent you pay: once rent outgrows the cost of owning, that pot drains and the line can fall
+                  below zero. They cross the same year buying pulls ahead.
                 </>
               }
             >
+              {/* Clipped to the decision horizon. The engine simulates 30 years so the crossing is
+                  always in the array, but plotting all of it puts a renter $200k-$440k underwater
+                  at a year this scenario never reaches. */}
               <NetWorthChart
-                data={deferredResult.netWorth}
+                data={clipNetWorth(
+                  deferredResult.netWorth,
+                  deferredInputs.yearsToStay,
+                  deferredResult.breakevenYear,
+                )}
                 breakevenYear={deferredResult.breakevenYear}
                 yearsToStay={deferredInputs.yearsToStay}
               />
@@ -694,25 +759,7 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
 
             <MonthlyPayment result={result} inputs={inputs} />
 
-            <Affordability result={result} inputs={inputs} patch={patch} />
-
-            <ChartCard
-              title="Cost gap: how far ahead buying or renting is"
-              legend={<AdvantageLegend />}
-              note={
-                <>
-                  Cumulative net cost in today's dollars, plotted as the gap between renting and buying. Below zero
-                  renting is ahead, above zero buying is. Where it crosses is the year buying takes the lead. Tap or hover
-                  for the running total on each side.
-                </>
-              }
-            >
-              <AdvantageChart
-                data={deferredResult.horizon}
-                breakevenYear={deferredResult.breakevenYear}
-                yearsToStay={deferredInputs.yearsToStay}
-              />
-            </ChartCard>
+            <Affordability result={result} inputs={inputs} patch={patch} typicalPrice={sourcePrice} />
 
             <ChartCard
               title="Where each year's payment goes"
@@ -749,9 +796,10 @@ export function App({ initialMetroSlug, initialZip }: { initialMetroSlug?: strin
               note={
                 <>
                   Your all-in monthly cost of owning (mortgage, property tax, insurance, maintenance, plus any HOA and
-                  PMI){ownNet ? " less the mortgage-interest and SALT tax break" : ""}, against the rent that year. Owning
-                  holds roughly steady while rent climbs, so where they cross is when renting starts costing more each
-                  month.
+                  PMI){ownNet ? " less the mortgage-interest and SALT tax break" : ""}, against the rent that year. Only
+                  the mortgage is fixed: property tax, insurance, and maintenance are all percent-of-value, so they ride
+                  appreciation and owning climbs too, just more slowly than rent. Where they cross is when renting starts
+                  costing more each month.
                   {!hasTaxBenefit && (
                     <> At these numbers itemizing doesn't beat the standard deduction, so there's no tax break to remove and this toggle won't move the line.</>
                   )}
@@ -883,19 +931,23 @@ function Header({ market }: { market: MarketData }) {
 
 function Hero({
   metro,
-  result,
+  confidence,
   inputs,
   rentIsEstimate,
+  rentMismatch,
+  typicalPrice,
 }: {
   metro: string;
-  result: CalcResult;
+  confidence: VerdictConfidence;
   inputs: AppInputs;
   rentIsEstimate: boolean;
+  rentMismatch: boolean;
+  typicalPrice: number;
 }) {
-  const renting = result.verdict === "rent";
-  // Honor the same close-call threshold the Verdict card and announcer use, so the giant
-  // headline can't shout a winner while the card right below it reads "Toss-up".
-  const closeCall = isCloseCall(result, inputs);
+  // The one verdict App computed, not a second opinion: the giant headline can't shout a winner
+  // while the card right below it reads "Toss-up".
+  const renting = confidence === "rent";
+  const closeCall = confidence === "toss-up";
   // While the rent is still the auto-filled local typical, frame it as a market estimate rather
   // than "rent" (the user's), so the giant headline can't imply a verdict about a number they
   // never gave us.
@@ -922,40 +974,34 @@ function Hero({
           That's the local typical rent, auto-filled. Enter your actual rent for a verdict about you.
         </p>
       )}
+      {/* The auto-filled rent is still sitting there against a price it was never measured on.
+          Deliberately no suggested rent: a fabricated one-tap number would be believed, and a
+          made-up comparable is worse than a visibly stale one. */}
+      {rentMismatch && (
+        <p className="mt-2 text-sm text-muted">
+          {usd(inputs.monthlyRent)} is what a typical local home ({usd(typicalPrice)}) rents for, not one at{" "}
+          {usd(inputs.homePrice)}. Enter the rent for a comparable home.
+        </p>
+      )}
     </div>
   );
 }
 
-// The conventional 28/36 underwriting rule of thumb: lenders like housing costs at or under 28%
-// of gross monthly income (front-end), and total debt (housing plus car/student/card payments)
-// at or under 36% (back-end). Many programs stretch the back-end to ~43%, but 36% is the
-// comfortable line the affordability panel measures against.
-const DTI_FRONT_END_LIMIT = 0.28;
-const DTI_BACK_END_LIMIT = 0.36;
-// The QM safe-harbor back-end ceiling. Above this most lenders deny or kick to manual
-// underwrite, so a confident "Buy it" deserves a qualification caveat regardless of the
-// economic verdict. 36% is the comfort line; 43% is the approval wall.
-const DTI_QM_LIMIT = 0.43;
-
-// Back-end DTI (housing PITI + other debt over gross monthly income), or null when there's no
-// income or no loan to qualify. Shared by the verdict's qualification caveat and the
-// affordability panel so both read the same ratio.
-function backEndDti(result: CalcResult, inputs: AppInputs): number | null {
-  const y1 = result.years[0];
-  if (!y1 || inputs.annualIncome <= 0 || result.loanAmount <= 0) return null;
-  const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
-  const housing = result.monthlyPayment + lines.reduce((s, l) => s + l.monthly, 0);
-  const grossMonthly = inputs.annualIncome / 12;
-  if (grossMonthly <= 0) return null;
-  return (housing + inputs.otherMonthlyDebt) / grossMonthly;
-}
 // A one-line verdict for mobile, shown above the controls so there's immediate
 // feedback without scrolling past every input first.
-function CondensedVerdict({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
-  const renting = result.verdict === "rent";
+function CondensedVerdict({
+  result,
+  confidence,
+  word,
+}: {
+  result: CalcResult;
+  confidence: VerdictConfidence;
+  word: string;
+}) {
+  const renting = confidence === "rent";
   // A toss-up stays neutral (line border, surface fill, muted eyebrow) so the card chrome
   // doesn't shout a winner the headline refuses to pick. Mirrors Hero and SimpleCalc.
-  const closeCall = isCloseCall(result, inputs);
+  const closeCall = confidence === "toss-up";
   return (
     <div
       className={
@@ -972,7 +1018,7 @@ function CondensedVerdict({ result, inputs }: { result: CalcResult; inputs: AppI
         >
           Verdict
         </div>
-        <div className="text-lg font-extrabold">{verdictLabel(result, inputs)}</div>
+        <div className="text-lg font-extrabold">{word}</div>
       </div>
       <div className="text-right">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Breakeven rent</div>
@@ -985,28 +1031,67 @@ function CondensedVerdict({ result, inputs }: { result: CalcResult; inputs: AppI
 function Verdict({
   result,
   inputs,
+  confidence,
+  word,
   driver,
   flipCount,
   rentIsEstimate,
+  pivot,
+  ranAppreciation,
+  flatMarketYear,
 }: {
   result: CalcResult;
   inputs: AppInputs;
+  confidence: VerdictConfidence;
+  word: string;
   driver: ReturnType<typeof drivingFactor>;
   flipCount: number;
   rentIsEstimate: boolean;
+  pivot: AppreciationPivot;
+  ranAppreciation?: number;
+  flatMarketYear: number | null;
 }) {
-  const renting = result.verdict === "rent";
+  const renting = confidence === "rent";
   const diff = Math.abs(result.monthlyDifference);
-  const closeCall = isCloseCall(result, inputs);
+  const closeCall = confidence === "toss-up";
   // A cheerful "Buy it" is dangerous if the borrower can't qualify for the loan. When the
-  // back-end DTI clears the 43% QM wall and the verdict isn't already "rent", flag that the
-  // economic answer ignores whether a lender would approve the payment.
+  // back-end DTI clears the 43% QM wall and the economics don't already say rent, flag that the
+  // answer ignores whether a lender would approve the payment. Keyed off the raw verdict rather
+  // than the confidence word: a toss-up that leans buy still deserves the warning.
   const backDti = backEndDti(result, inputs);
-  const cantQualify = !renting && backDti != null && backDti > DTI_QM_LIMIT;
+  const cantQualify = result.verdict !== "rent" && backDti != null && backDti > DTI_QM_LIMIT;
   // Cash due at the signing table, the number every monthly comparison quietly skips:
   // down payment + closing costs to buy, deposit + broker fee to rent.
   const buyUpfront = inputs.homePrice * (inputs.downPaymentPct + inputs.buyingClosingPct);
   const rentUpfront = inputs.monthlyRent * (inputs.securityDepositMonths + inputs.brokerFeeMonths);
+  // What the common regret path actually costs: the job moves, the relationship ends, and you
+  // sell in year 2 or 3 having paid the full 9% round trip. The engine already prices every
+  // horizon, so this is a lookup, not a second model. Year 3 unless the stay is shorter, and
+  // nothing at all under a 3-year stay, where "leave early" isn't a different plan.
+  const exitYear = Math.min(3, inputs.yearsToStay - 1);
+  const exitPoint = inputs.yearsToStay > 2 ? result.horizon[exitYear - 1] : undefined;
+  const exitGap = exitPoint ? exitPoint.buyNetCost - exitPoint.rentNetCost : null;
+  // What the answer hinges on, as a rate rather than a lever name. Reads next to the metro's own
+  // five-year run so the threshold has something to be measured against; a place with no history
+  // on file just gets the threshold.
+  const pivotLine =
+    pivot.kind === "flat" ? (
+      <>Buying wins here even if prices never rise at all.</>
+    ) : pivot.kind === "unreachable" ? (
+      <>Over this short a stay, no plausible appreciation pays back the cost of buying and selling.</>
+    ) : (
+      <>
+        Buying pulls ahead once prices rise about{" "}
+        <span className="font-semibold text-ink">{pct(pivot.rate, 1)}/yr</span>
+        {ranAppreciation == null ? (
+          "."
+        ) : ranAppreciation < 0 ? (
+          <>; locally they've fallen about {pct(-ranAppreciation, 1)}/yr over the past five years.</>
+        ) : (
+          <>; locally they've run {pct(ranAppreciation, 1)}/yr over the past five years.</>
+        )}
+      </>
+    );
   return (
     <div
       className={
@@ -1024,7 +1109,7 @@ function Verdict({
           >
             Verdict
           </div>
-          <div className="mt-1 text-2xl font-extrabold">{verdictLabel(result, inputs)}</div>
+          <div className="mt-1 text-2xl font-extrabold">{word}</div>
           <p className="mt-1 text-sm text-muted">
             {/* Don't say "Your rent" about the auto-filled estimate the user never entered;
                 call it the typical local rent until they type their own. */}
@@ -1037,26 +1122,31 @@ function Verdict({
                   : `${subject} is ${usd(diff)}/mo over the breakeven rent, so buying comes out ahead.`;
             })()}
           </p>
-          {driver && (
-            <p className="mt-2 text-xs text-muted">
-              {flipCount === 0 ? (
-                <>
-                  Pretty robust: even <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span>, the
-                  biggest lever, doesn't flip it.
-                </>
-              ) : flipCount === 1 ? (
-                <>
-                  Hinges on <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span>, the one
-                  assumption that could flip the answer on its own.
-                </>
-              ) : (
-                <>
-                  A close call: {flipCount} assumptions could each flip it,{" "}
-                  <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span> most of all.
-                </>
-              )}
-            </p>
-          )}
+          {/* One line for what the verdict leans on, naming the lever and then pricing it. The
+              lever alone ("hinges on home appreciation") is a category, not an answer. */}
+          <p className="mt-2 text-xs text-muted">
+            {driver && (
+              <>
+                {flipCount === 0 ? (
+                  <>
+                    Pretty robust: even <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span>, the
+                    biggest lever, doesn't flip it.
+                  </>
+                ) : flipCount === 1 ? (
+                  <>
+                    Hinges on <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span>, the one
+                    assumption that could flip the answer on its own.
+                  </>
+                ) : (
+                  <>
+                    A close call: {flipCount} assumptions could each flip it,{" "}
+                    <span className="font-semibold text-ink">{driver.label.toLowerCase()}</span> most of all.
+                  </>
+                )}{" "}
+              </>
+            )}
+            {pivotLine}
+          </p>
           {cantQualify && backDti != null && (
             <p className="mt-2 text-xs text-warn-text">
               <span className="font-semibold">Buying looks cheaper long-run, but at {Math.round(backDti * 100)}% back-end DTI</span>{" "}
@@ -1072,19 +1162,49 @@ function Verdict({
               </>
             ) : null}
             .
+            {exitGap != null &&
+              (exitGap > 0 ? (
+                <>
+                  {" "}
+                  Move out after {yearsLabel(exitYear)} instead and buying costs{" "}
+                  <span className="font-semibold text-ink">{usd(exitGap)}</span> more than renting would have.
+                </>
+              ) : (
+                <>
+                  {" "}
+                  Even moving out after {yearsLabel(exitYear)}, buying stays{" "}
+                  <span className="font-semibold text-ink">{usd(-exitGap)}</span> ahead of renting.
+                </>
+              ))}
           </p>
         </div>
         <Stat
           label="Breakeven rent"
           value={`${usd(result.breakevenRent)}/mo`}
           // Frame the threshold from the winning side: a renting verdict shouldn't keep
-          // explaining when buying would win.
-          sub={renting ? "renting wins below this rent" : "buying wins above this rent"}
+          // explaining when buying would win. Reads the raw verdict, not the confidence word,
+          // since a toss-up still has a cheaper side to point at.
+          sub={result.verdict === "rent" ? "renting wins below this rent" : "buying wins above this rent"}
         />
         <Stat
           label="Breakeven horizon"
           value={result.breakevenYear == null ? "Never" : yearsLabel(result.breakevenYear)}
-          sub={result.breakevenYear == null ? "renting stays ahead at every horizon" : "stay longer, buying wins"}
+          // The single year is the answer under the appreciation you've assumed. Pairing it with
+          // the flat-market horizon prices the downside, which is the half people plan around
+          // badly: on the national default it's the difference between 5 years and 14.
+          //
+          // Only when flat is actually the worse case. A flat market that breaks even in the same
+          // year says nothing, and a scenario assuming FALLING prices makes flat the better one,
+          // where "if prices go flat" would be framing an upside as a warning.
+          sub={
+            result.breakevenYear == null
+              ? "renting stays ahead at every horizon"
+              : flatMarketYear == null
+                ? "stay longer and buying wins; never, if prices go flat"
+                : flatMarketYear > result.breakevenYear
+                  ? `stay longer and buying wins; ${yearsLabel(flatMarketYear)} if prices go flat`
+                  : "stay longer, buying wins"
+          }
         />
       </div>
       <div className="grid grid-cols-2 border-t border-line bg-surface/60 sm:grid-cols-4">
@@ -1105,35 +1225,63 @@ function Verdict({
 // "net effective" monthly figure (Year 1) so the affordability picture is honest.
 // The headline says what it is; the itemized lines live behind an expander. The
 // income/DTI side of affordability lives in the Affordability panel below, not here.
-function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcInputs }) {
+function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: AppInputs }) {
   const [open, setOpen] = useState(false);
   const y1 = result.years[0];
   if (!y1) return null;
-  // pni = principal & interest; gross = the all-in monthly housing payment; net = gross minus
-  // the Year-1 federal tax benefit. The headline shows net; affordability is judged on gross.
+  // Two figures, deliberately named apart, because conflating them is the bug this card used to
+  // ship. `lenderPayment` is gross PITI: what underwriting measures, and what the DTI ratios in
+  // the Affordability panel read. It excludes maintenance because lenders exclude it.
+  // `maintenance` is money that leaves your account every month regardless, so the comparison
+  // against rent below has to carry it -- on the US default the lender's view puts owning
+  // $89/mo over renting while the real all-in gap is $403.
+  // NOTHING derived from `allIn` may ever feed a DTI ratio.
   const pni = result.monthlyPayment;
   const taxBenefit = y1.taxBenefit / 12;
   // Escrow-style carrying costs straight from the registry, so a new one flows into
   // the headline automatically (maintenance is excluded by not being flagged).
   const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
-  const gross = pni + lines.reduce((s, l) => s + l.monthly, 0);
-  const net = gross - taxBenefit;
-  // The comparison the whole app exists to make: this owning payment against the rent it
-  // replaces. Principal is still buried inside the owning figure, hence "before any equity".
+  const lenderPayment = housingPayment(result, inputs);
+  const maintenance = y1.costs.maintenance / 12;
+  const net = lenderPayment - taxBenefit;
+  const allIn = net + maintenance;
+  // The comparison the whole app exists to make: the real monthly cost of owning against the
+  // rent it replaces. Principal is still buried inside the owning figure, hence "before any
+  // equity".
   const rent = inputs.monthlyRent;
-  const delta = net - rent;
-  const rows: { label: string; value: number; credit?: boolean }[] = [
+  const delta = allIn - rent;
+  const rows: { label: string; hint?: string; value: number; credit?: boolean; aside?: boolean }[] = [
     { label: "Principal & interest", value: pni },
     ...lines.map((l) => ({ label: l.label, value: l.monthly })),
-    ...(taxBenefit > 0 ? [{ label: "Tax benefit", value: taxBenefit, credit: true }] : []),
+    // Set off below the escrow lines: a lender doesn't count maintenance toward the payment it
+    // qualifies you for, but you still pay it.
+    ...(maintenance > 0
+      ? [{ label: "Maintenance", hint: "not in the lender's payment", value: maintenance, aside: true }]
+      : []),
+    ...(taxBenefit > 0
+      ? [
+          {
+            label: "Tax benefit, if you itemize",
+            hint: `about ${usd(y1.taxBenefit)} back at tax time`,
+            value: taxBenefit,
+            credit: true,
+          },
+        ]
+      : []),
   ];
 
   // The "what is this figure" prose lives in a tooltip on the headline now, so the card stays
-  // scannable while the gross (pre-tax-benefit) figure is still one tap away.
+  // scannable while the gross (pre-tax-benefit) figure is still one tap away. It says "the
+  // payment" rather than "all-in", since maintenance rides outside it.
+  const maintenanceNote =
+    maintenance > 0
+      ? ` Maintenance (${usd(maintenance)}/mo) sits outside the payment a lender qualifies you on, so it's a separate line in the breakdown and folded into the comparison with rent.`
+      : "";
   const explain =
-    taxBenefit > 0
-      ? `All-in year-1 housing (principal & interest, property tax, insurance, plus any HOA and PMI), minus the estimated federal tax benefit from itemizing mortgage interest and SALT over the standard deduction. ${usd(gross)}/mo before that benefit.`
-      : "All-in year-1 housing (principal & interest, property tax, insurance, plus any HOA and PMI). Itemizing doesn't beat the standard deduction at these numbers, so there's no tax benefit to net out.";
+    (taxBenefit > 0
+      ? `Your year-1 housing payment (principal & interest, property tax, insurance, plus any HOA and PMI), minus the estimated federal tax benefit from itemizing mortgage interest and SALT over the standard deduction. ${usd(lenderPayment)}/mo before that benefit.`
+      : "Your year-1 housing payment (principal & interest, property tax, insurance, plus any HOA and PMI). Itemizing doesn't beat the standard deduction at these numbers, so there's no tax benefit to net out.") +
+    maintenanceNote;
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
@@ -1148,20 +1296,22 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
         </div>
       </div>
       {rent > 0 && (
+        // The gap is measured on `allIn`, not the headline figure, so it names maintenance
+        // explicitly: otherwise the arithmetic (headline minus rent) visibly wouldn't add up.
         <p className="mt-1.5 text-sm text-muted">
           {Math.abs(delta) < 15 ? (
             <>
-              About the same monthly as renting (<span className="font-semibold text-ink">{usd(rent)}/mo</span>), before
-              you build any equity.
+              With maintenance, about the same monthly as renting (
+              <span className="font-semibold text-ink">{usd(rent)}/mo</span>), before you build any equity.
             </>
           ) : delta > 0 ? (
             <>
-              <span className="font-semibold text-ink">{usd(delta)}/mo more</span> than renting (
+              With maintenance, <span className="font-semibold text-ink">{usd(delta)}/mo more</span> than renting (
               <span className="font-semibold text-ink">{usd(rent)}/mo</span>), before you build any equity.
             </>
           ) : (
             <>
-              <span className="font-semibold text-ink">{usd(-delta)}/mo less</span> than renting (
+              With maintenance, <span className="font-semibold text-ink">{usd(-delta)}/mo less</span> than renting (
               <span className="font-semibold text-ink">{usd(rent)}/mo</span>), and you still build equity.
             </>
           )}
@@ -1171,6 +1321,13 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
         <p className="mt-1.5 text-xs text-muted">
           No tax break at these numbers: the standard deduction beats itemizing, so "net" is the same as the full
           payment.
+        </p>
+      )}
+      {/* The single most common way this figure comes out low: HOA defaults to zero, and a condo
+          shopper has no reason to know the model left it out until closing. */}
+      {inputs.hoaMonthly === 0 && (
+        <p className="mt-1.5 text-xs text-muted">
+          Condo or townhome? Add the dues in Advanced. They often run $400-700/mo, and none of it builds equity.
         </p>
       )}
       <button
@@ -1194,8 +1351,18 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
         <>
           <dl className="mt-3 space-y-1.5 border-t border-line/60 pt-3">
             {rows.map((r) => (
-              <div key={r.label} className="flex items-baseline justify-between gap-3">
-                <dt className="text-sm text-muted">{r.label}</dt>
+              <div
+                key={r.label}
+                // `aside` rules a line off from the escrow lines above it: same money out the
+                // door, but not part of the payment the lender underwrites.
+                className={
+                  "flex items-baseline justify-between gap-3" + (r.aside ? " mt-2 border-t border-line/60 pt-2" : "")
+                }
+              >
+                <dt className="text-sm text-muted">
+                  {r.label}
+                  {r.hint && <span className="ml-1 text-xs">({r.hint})</span>}
+                </dt>
                 <dd className={"tnum text-sm font-semibold " + (r.credit ? "text-rent-text" : "text-ink")}>
                   {r.credit ? `-${usd(r.value)}` : usd(r.value)}
                 </dd>
@@ -1203,9 +1370,10 @@ function MonthlyPayment({ result, inputs }: { result: CalcResult; inputs: CalcIn
             ))}
           </dl>
           <p className="mt-3 text-xs text-muted">
-            Year 1, from the property tax, insurance, and HOA figures you entered. The tax benefit shrinks as interest
-            falls, so this nudges up over time. Excludes maintenance and the down payment's opportunity cost (both in
-            the full cost model).
+            Year 1, from the property tax, insurance, maintenance, and HOA figures you entered. The tax benefit shrinks
+            as interest falls, so this nudges up over time. The headline figure is the lender's payment (no
+            maintenance); the comparison with rent above includes it. Excludes the down payment's opportunity cost
+            (in the full cost model).
           </p>
         </>
       )}
@@ -1281,25 +1449,54 @@ function RatioRow({
 
 // A plain-language affordability walkthrough: gross income, what's left after estimated taxes, and
 // how the all-in housing payment (plus any other debt) sits against the 28% front-end and 36%
-// back-end ratios lenders underwrite to. Rendered only when an income is entered and the purchase
-// is financed (an all-cash buy has no lender ratio), so the default view stays uncluttered.
+// back-end ratios lenders underwrite to. Only the financed case is shown (an all-cash buy has no
+// lender ratio); without an income it degrades to a prompt for one rather than vanishing, since
+// income defaults to 0 and a panel nobody ever sees is a panel nobody can be helped by.
 function Affordability({
   result,
   inputs,
   patch,
+  typicalPrice,
 }: {
   result: CalcResult;
   inputs: AppInputs;
   patch: (p: Partial<AppInputs>) => void;
+  typicalPrice: number;
 }) {
   const y1 = result.years[0];
   const income = inputs.annualIncome;
-  if (!y1 || income <= 0 || result.loanAmount <= 0) return null;
+  if (!y1 || result.loanAmount <= 0) return null;
 
-  // Gross PITI: the all-in housing payment lenders qualify against (before any tax benefit),
-  // built the same way as the payment card's gross figure.
-  const lines = housingPaymentLines(y1).filter((l) => l.monthly > 0);
-  const housing = result.monthlyPayment + lines.reduce((s, l) => s + l.monthly, 0);
+  if (income <= 0) {
+    return (
+      <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+        <h3 className="text-base font-bold">Can you afford it?</h3>
+        <p className="mt-1 text-sm text-muted">Add your income to check whether you can carry this.</p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-sm text-muted">
+            Household income<span className="ml-1 font-normal text-muted">before tax, per year</span>
+          </span>
+          <div className="w-36 shrink-0">
+            <MoneyInput
+              value={income}
+              onChange={(n) => patch({ annualIncome: n })}
+              step={5000}
+              placeholder="e.g. 120,000"
+              ariaLabel="Household income"
+            />
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Until then there's no debt-to-income ratio to check, and the tax benefit in the payment above is valued at the
+          assumed {pct(inputs.marginalTaxRate, 0)} marginal rate rather than one estimated from what you earn.
+        </p>
+      </div>
+    );
+  }
+
+  // Gross PITI, from the one shared definition: the housing payment lenders qualify against,
+  // before any tax benefit and deliberately without maintenance.
+  const housing = housingPayment(result, inputs);
 
   const grossMonthly = income / 12;
   const { incomeTax, fica, takeHome } = estimateTakeHome(income, inputs.filingJointly, inputs.taxState, inputs.localTaxRate);
@@ -1315,8 +1512,33 @@ function Affordability({
   const frontOver = frontPct > DTI_FRONT_END_LIMIT * 100;
   const backOver = backPct > DTI_BACK_END_LIMIT * 100;
   const overGuideline = frontOver || backOver;
-  // The budget-side view lenders ignore: the share of actual take-home the housing payment eats.
-  const takeHomeShare = takeHomeMonthly > 0 ? Math.round((housing / takeHomeMonthly) * 100) : null;
+  // The budget-side view lenders ignore, and the one place in this panel maintenance belongs:
+  // it's your money going out the door whether or not underwriting counts it. frontPct/backPct
+  // stay on gross PITI above, because those are the lender's ratios and a lender excludes it.
+  const budgetHousing = housing + y1.costs.maintenance / 12;
+  const takeHomeShare = takeHomeMonthly > 0 ? Math.round((budgetHousing / takeHomeMonthly) * 100) : null;
+
+  // Being told you're over the line and nothing else is a dead end, so name the price that isn't.
+  // Only the 36% comfort figure: quoting the 43% approval ceiling as a number turns this into a
+  // pre-approval letter, which is precisely the anchor that gets people into trouble. No "use
+  // this price" action either, since applying it would silently destroy the scenario and every
+  // remembered override behind it.
+  //
+  // Gated on the BACK-end specifically, not on overGuideline. A front-end-only breach (28% of
+  // gross on housing, total debt still comfortable) means the 36% line sits ABOVE the price
+  // being modelled, and answering "you're stretching" with a bigger number is the upward anchor
+  // this is meant to avoid.
+  //
+  // Quoted DOWN, never to the dollar. The search prices the payment at closing; the ratio above
+  // reads the engine's year-1 AVERAGE, which has already grown half a year of appreciation into
+  // the tax and insurance lines, so the search runs optimistic by roughly 1.7% of those two
+  // lines. That error scales with the price, which is why the haircut is a percentage and not a
+  // flat few thousand: at $400k it's ~$10/mo, at $2M it's ~$50/mo. 1% of price buys about three
+  // times the payment headroom that gap needs at any price, and the $5k floor keeps the quote
+  // reading as a shopping number rather than an appraisal. The site must never name a price and
+  // then, once it's typed in, call it over the line.
+  const comfortRaw = backOver ? maxPriceForDti(inputs, DTI_BACK_END_LIMIT) : null;
+  const comfortPrice = comfortRaw != null ? Math.floor((comfortRaw * 0.99) / 5000) * 5000 : 0;
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
@@ -1376,14 +1598,25 @@ function Affordability({
         ) : (
           <>Comfortably inside the 28/36 guideline lenders like to see.</>
         )}
-        {takeHomeShare != null && <> The payment is {takeHomeShare}% of your take-home pay.</>}
+        {comfortPrice > 0 && typicalPrice > 0 && (
+          <>
+            {" "}
+            The 36% comfort line lands {comfortPrice < typicalPrice ? "below" : "above"} a typical local home (
+            {usd(typicalPrice)}), at a price around{" "}
+            <span className="font-medium text-ink">{usd(comfortPrice)}</span>.
+          </>
+        )}
+        {takeHomeShare != null && (
+          <> The payment plus maintenance is {takeHomeShare}% of your take-home pay.</>
+        )}
         {overGuideline && result.verdict === "rent" && (
           <> Renting also comes out ahead here, so stretching for this isn't buying you a better deal.</>
         )}
       </p>
       <p className="mt-2 text-xs text-muted">
         Take-home is an estimate: federal, state, and local income tax plus employee FICA, assuming W-2 wages. Lenders
-        measure these ratios against gross income; the take-home line is just your budget's view. Not financial advice.
+        measure these ratios against gross income and leave maintenance out of the payment entirely; the take-home line
+        is your budget's view, so it counts maintenance too. Not financial advice.
       </p>
     </div>
   );
@@ -1466,23 +1699,11 @@ function Legend() {
   );
 }
 
-function AdvantageLegend() {
-  // Triangles (up vs down) carry the meaning by shape as well as color, so the orange/teal pair
-  // stays legible for colorblind readers, and they echo the chart's above/below-the-line split.
-  return (
-    <div className="flex items-center gap-4 text-xs">
-      <span className="flex items-center gap-1.5">
-        <span aria-hidden className="text-buy">&#9650;</span> Buying ahead
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span aria-hidden className="text-rent">&#9660;</span> Renting ahead
-      </span>
-    </div>
-  );
-}
-
 function Sources({ market }: { market: MarketData }) {
-  const items: { label: string; value: string; href: string }[] = [
+  // `note` is for a caveat that changes what the figure means, not for more provenance: the
+  // insurance row's flood clause is the difference between "insured" and "insured for the thing
+  // that will actually flood your house".
+  const items: { label: string; value: string; href: string; note?: string }[] = [
     {
       label: "Mortgage rates",
       value: `Freddie Mac PMMS · ${pct(market.mortgage.rate30, 2)} (${market.mortgage.asOf})`,
@@ -1506,6 +1727,7 @@ function Sources({ market }: { market: MarketData }) {
     {
       label: "Home insurance",
       value: "NAIC HO-3 premiums / Zillow ZHVI, effective rate by state",
+      note: "HO-3 only. Flood is excluded from every HO-3 policy and is a separate one, required by your lender in a FEMA flood zone.",
       href: "https://www.iii.org/fact-statistic/facts-statistics-homeowners-and-renters-insurance",
     },
     {
@@ -1534,6 +1756,7 @@ function Sources({ market }: { market: MarketData }) {
           >
             <div className="text-xs font-semibold uppercase tracking-wide text-muted">{s.label}</div>
             <div className="text-sm font-medium text-ink group-hover:underline">{s.value}</div>
+            {s.note && <div className="mt-0.5 text-xs text-muted">{s.note}</div>}
           </a>
         ))}
       </div>
@@ -1629,10 +1852,15 @@ function MethodologyFormulas() {
       ),
     },
     {
-      title: "Tax benefit (itemizing helps only on the excess)",
+      title: "Tax benefit (what buying adds to the deduction you'd take anyway)",
       body: (
         <>
-          <Formula>benefit = fedRate · max(0, deductibleInterest + saltUsed - standardDeduction)</Formula>
+          <Formula>
+            benefit = fedRate · ( max(SD, deductibleInterest + saltUsed) &minus; max(SD, min(otherSALT, saltCap)) )
+          </Formula>
+          Both sides floor at the standard deduction SD, so the benefit is the itemization premium buying creates, not
+          the whole itemized total: a filer whose state and local income tax already beats SD on its own isn't credited
+          twice for those dollars. SD is indexed at your inflation rate after year 1, the way the statute indexes it.
           Interest is capped at the {usd(MORTGAGE_INTEREST_DEBT_CAP)} acquisition-debt fraction (rising toward 100% as
           the loan amortizes under the cap); saltUsed = min(property tax + state and local income tax,{" "}
           {usd(saltCapForYear(TAX_YEAR))} SALT cap, which steps down in later years under current law). Valued at your
