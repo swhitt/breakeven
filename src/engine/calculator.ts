@@ -107,6 +107,8 @@ export interface CostContext {
   inflationFactor: number; // (1 + inflation)^yearFraction
   loanBalance: number; // after this month's principal
   originalLoan: number;
+  month: number; // 1-based month of the simulation (PMI termination is seasoning-dependent)
+  termMonths: number; // amortization term in months (PMI's midpoint termination)
 }
 
 export interface RecurringCost {
@@ -157,19 +159,41 @@ export const RECURRING_COSTS = [
     monthly: (i, c) => i.hoaMonthly * c.inflationFactor,
   },
   {
-    // PMI runs while loan-to-value is over 80%. The LTV trigger is measured against the
-    // CURRENT (appreciated) value, since servicers cancel as the home gains value, not just
-    // as the loan amortizes. The premium itself is still priced off the original loan, the way
-    // servicers quote it, and scaled by the ORIGINAL LTV: PMI is risk-priced, so a 97% LTV
-    // loan costs multiples of an 85% one (see pmiRateForLtv). A flat or declining market won't
-    // cancel via appreciation here, only via principal paydown, the conservative real behavior.
+    // PMI attaches to loans that START above 80% LTV and comes off the way the Homeowners
+    // Protection Act actually makes servicers drop it, which is much later than "the moment
+    // the appreciated value implies 80%". Three separate exits, whichever lands first:
+    //   1. Automatic termination at 78% of the ORIGINAL price. The statutory trigger is the
+    //      amortization schedule, not the market, so appreciation buys nothing here.
+    //   2. Midpoint of the amortization term, unconditionally (the HPA final-termination rule).
+    //   3. Borrower-REQUESTED cancellation off current (appreciated) value, which is the only
+    //      exit appreciation opens and which the borrower has to ask for: 75% LTV after 2 years
+    //      of seasoning, 80% after 5. We model the earliest a diligent borrower could get it;
+    //      a borrower who never asks pays until (1) or (2), so this is the optimistic edge.
+    // Cancelling on appreciated value alone with no seasoning (the old rule here) let a 5%-down
+    // buyer out around year 4 when the real schedule keeps them in for years longer, understating
+    // the cost of a low-down purchase by thousands. Cancellation is a one-way door in real life
+    // and stays one here: under a constant appreciation rate the current LTV can't dip under a
+    // threshold and climb back (amortization only accelerates), so no month re-imposes PMI.
+    // The premium itself is priced off the ORIGINAL loan, the way servicers quote it, and scaled
+    // by the ORIGINAL LTV: PMI is risk-priced, so a 97% LTV loan costs multiples of an 85% one
+    // (see pmiLtvMultiplier).
     key: "pmi",
     label: "PMI",
     side: "buy",
     deductibleSALT: false,
     inHousingPayment: true,
-    monthly: (i, c) =>
-      c.loanBalance / c.homeValue > 0.8 ? (c.originalLoan * i.pmiRate * pmiLtvMultiplier(c.originalLoan / c.homePrice)) / 12 : 0,
+    monthly: (i, c) => {
+      // Compared as a product, not a ratio: `1 - 0.2` is exactly 0.8 in binary, so this is the
+      // same multiplication that produced a 20%-down buyer's loan and ties exactly, whereas
+      // loan/price can round a step above 0.8 (try $200,003) and bill them for PMI forever.
+      if (!(c.originalLoan > c.homePrice * 0.8)) return 0;
+      if (c.loanBalance <= 0.78 * c.homePrice) return 0; // automatic termination
+      if (c.month >= c.termMonths / 2) return 0; // midpoint termination
+      const currentLtv = c.loanBalance / c.homeValue;
+      if (c.month >= 24 && currentLtv <= 0.75) return 0; // borrower-requested, 2yr seasoning
+      if (c.month >= 60 && currentLtv <= 0.8) return 0; // borrower-requested, 5yr seasoning
+      return (c.originalLoan * i.pmiRate * pmiLtvMultiplier(c.originalLoan / c.homePrice)) / 12;
+    },
   },
 ] as const satisfies readonly RecurringCost[];
 
@@ -342,7 +366,12 @@ function buyerNetWorthAt(inp: CalcInputs, homeValue: number, loanBalance: number
   // this is the usual $250k/$500k shield.)
   const fullExclusion = inp.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
   const exclusion = holdYears >= 2 ? fullExclusion : 0;
-  const capGainsTax = inp.capitalGainsRate * Math.max(0, gain - exclusion);
+  // A gain on a hold of a year or less is SHORT-term: it's taxed as ordinary income, not at
+  // the preferential long-term rate. Long-term status needs MORE than a year, so the 12-month
+  // point (the year-1 point of the horizon sweep) is still short-term, and a flip there should
+  // show the buyer's own marginal rate rather than a flattering 15%.
+  const gainsRate = holdYears <= 1 ? inp.marginalTaxRate : inp.capitalGainsRate;
+  const capGainsTax = gainsRate * Math.max(0, gain - exclusion);
   return homeValue - sellingCosts - loanBalance - capGainsTax;
 }
 
@@ -418,6 +447,8 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       inflationFactor: infl,
       loanBalance: balance, // post-amortization, for the PMI LTV test
       originalLoan: loan,
+      month: m,
+      termMonths,
     };
     let recurring = 0;
     for (const c of BUY_COSTS) {
@@ -441,21 +472,30 @@ function simulateBuy(inp: CalcInputs, horizonYears: number, collectRows: boolean
       // in 2030, so a horizon that crosses 2030 uses the lower cap in its later years instead
       // of holding the entry-year value flat (which overstated the long-horizon buyer benefit).
       const calendarYear = TAX_YEAR + (m / 12 - 1);
-      const saltUsed = Math.min(saltBase + inp.otherSALT, saltCapForYear(calendarYear));
+      const saltCap = saltCapForYear(calendarYear);
+      const saltUsed = Math.min(saltBase + inp.otherSALT, saltCap);
       // PMI is deliberately excluded from itemized deductions. OBBBA restored the
       // mortgage-insurance-premium deduction for 2026+, but it phases out between
       // $100k-$110k AGI and the model has no AGI input (the default 24% marginal
       // rate already implies AGI past the phaseout), so we treat PMI as a pure cost.
-      // ASSUMPTION: standardDeduction and otherSALT are held at their entry-year nominal
-      // value for the whole horizon (the SALT cap follows its statutory schedule above),
-      // while the itemized total inflates with the home. Real law indexes the deduction,
-      // so this slightly overstates the long-horizon benefit for high-tax itemizers (it's
-      // $0, and so unaffected, for the common standard-deduction-wins case). The standard
-      // deduction's drift partially offsets the SALT taper, so leaving it flat is a wash;
-      // revisit if the horizon-tilt matters. The premium is also valued at a single marginal
-      // rate (a small overstatement when it straddles a bracket).
-      const itemized = acc.deductibleInterest + saltUsed;
-      const benefit = inp.marginalTaxRate * Math.max(0, itemized - inp.standardDeduction);
+      // The standard deduction is indexed at general inflation, the way the statute indexes it.
+      // Freezing it while the itemized total inflates with the home doesn't hedge the SALT taper
+      // above - both shrink the itemization premium, so they compound - it just overstates the
+      // long-horizon benefit for itemizers. (otherSALT is still held at its entry-year nominal.)
+      const standardDeduction = inp.standardDeduction * Math.pow(1 + inp.inflation, calendarYear - TAX_YEAR);
+      // The benefit is INCREMENTAL: what buying adds on top of the deduction this filer takes
+      // anyway. `otherSALT` (state/local income tax, fed in by the tax estimator) is deductible
+      // whether or not you buy, so a renter carrying enough of it already itemizes; crediting
+      // buying with those dollars overstates the benefit for exactly the high earner in a
+      // high-tax state. Both sides floor at the standard deduction, so the premium is identically
+      // $0 whenever the standard deduction wins the buy case (the common path), and collapses to
+      // a plain max(0, itemized - standard) whenever otherSALT alone can't beat it.
+      // The premium is still valued at a single marginal rate (a small overstatement when it
+      // straddles a bracket).
+      const itemizedBuy = acc.deductibleInterest + saltUsed;
+      const itemizedRent = Math.min(inp.otherSALT, saltCap);
+      const benefit =
+        inp.marginalTaxRate * (Math.max(standardDeduction, itemizedBuy) - Math.max(standardDeduction, itemizedRent));
       pv -= benefit / df;
 
       if (collectRows) {
@@ -606,4 +646,22 @@ export function breakevenRentOnly(rawInp: CalcInputs): number {
   const horizon = Math.max(1, Math.round(inp.yearsToStay));
   const buy = simulateBuy(inp, horizon, false);
   return breakevenRentAt(inp, horizon, buy.pvCost);
+}
+
+/**
+ * Just the year buying overtakes renting, nothing else. Same sweep calculate() runs, minus the
+ * per-year net-worth array, the breakdown rows, and the horizon points nobody reads here, and it
+ * stops at the first crossing instead of walking the full 30 years. Callers that only need "stay
+ * longer than N years" (the copy that leads the verdict, share-card text) pay for one answer, not
+ * a whole result object. Identical to calculate().breakevenYear, including the null when the two
+ * lines never cross inside the sweep; a test pins the two together so they can't drift.
+ */
+export function breakevenYearOnly(rawInp: CalcInputs): number | null {
+  const inp = sanitizeInputs(rawInp);
+  const horizon = Math.max(1, Math.round(inp.yearsToStay));
+  const maxYears = Math.max(horizon, inp.mortgageTermYears, 30);
+  for (let y = 1; y <= maxYears; y++) {
+    if (simulateBuy(inp, y, false).pvCost <= simulateRent(inp, y, inp.monthlyRent)) return y;
+  }
+  return null;
 }
