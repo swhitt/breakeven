@@ -79,6 +79,42 @@ describe("computeSensitivity", () => {
     expect(maint.set(flatMaint, centerRate).maintenance.kind).toBe("flatAnnual");
   });
 
+  it("sweeps home insurance as an eighth factor", () => {
+    expect(rows).toHaveLength(8);
+    const ins = rows.find((r) => r.label === "Home insurance");
+    expect(ins).toBeDefined();
+    expect(ins!.swing).toBeGreaterThan(0);
+  });
+
+  it("sweeps insurance on a relative band, so an 8x spread in state rates stays proportionate", () => {
+    // A fixed percentage-point band would be a rounding error on Hawaii and larger than the whole
+    // premium on Florida; the band has to scale with the rate to mean the same thing at both ends.
+    for (const rate of [0.0023, 0.0186]) {
+      const ins = buildFactors({ ...base, homeInsurance: { kind: "pctOfValue", rate } }).find((f) => f.label === "Home insurance")!;
+      expect(ins.lo).toBeCloseTo(rate * 0.65, 10);
+      expect(ins.hi).toBeCloseTo(rate * 1.35, 10);
+    }
+  });
+
+  it("sweeps flat-mode insurance in its native basis, so the center matches the model", () => {
+    // Same trap as maintenance: a flat-dollar premium rides inflation, so sweeping it as
+    // percent-of-value would put it on the appreciation track and mis-center the bar.
+    const flatIns: CalcInputs = {
+      ...base,
+      homeAppreciation: 0.08,
+      homeInsurance: { kind: "flatAnnual", annual: 2000 },
+    };
+    const ins = buildFactors(flatIns).find((f) => f.label === "Home insurance")!;
+    const centerRate = 2000 / flatIns.homePrice; // the implied rate the band is centered on: 0.5%
+    expect(ins.lo).toBeCloseTo(centerRate * 0.65, 10);
+    expect(ins.hi).toBeCloseTo(centerRate * 1.35, 10);
+    // Evaluating at the center must reproduce the unswept model's breakeven.
+    const swept = ins.set(flatIns, centerRate);
+    expect(breakevenRentOnly(swept)).toBeCloseTo(breakevenRentOnly(flatIns), 4);
+    // And it stays flat-mode through the setter (rides inflation), not converted to pctOfValue.
+    expect(swept.homeInsurance).toEqual({ kind: "flatAnnual", annual: 2000 });
+  });
+
   it("rounds the Years-you-stay endpoints to whole years the engine actually uses", () => {
     // A fractional yearsToStay (reachable via a crafted share link) gets rounded inside the engine,
     // so the swept endpoints must be whole years too, or the printed band and computed horizon

@@ -7,8 +7,8 @@ import { pct } from "./format";
 // chart and the one-line "what your verdict leans on" callout, kept in one pure place
 // so both read identical numbers.
 // A factor sweeps a single scalar (lo..hi) into the inputs via `set`. Most factors target a
-// plain numeric field, but `set` also lets a structured field ride along (maintenance is a
-// CostBasis, not a bare number), so it isn't shut out of the tornado just for its shape.
+// plain numeric field, but `set` also lets a structured field ride along (maintenance and
+// insurance are CostBasis, not bare numbers), so neither is shut out of the tornado for its shape.
 type NumericKey = { [K in keyof CalcInputs]: CalcInputs[K] extends number ? K : never }[keyof CalcInputs];
 
 // Default setter for the common case: overwrite one numeric field with the swept value.
@@ -53,6 +53,15 @@ export function buildFactors(inp: CalcInputs): Factor[] {
     // setter rebuilds a flat-dollar figure (rate * price) so the engine sees the same kind it would
     // for a real entry.
     maintenanceFactor(inp, p1),
+    // Insurance is the one bar on this chart with a concrete next action behind it ("go get an
+    // actual quote"), so it earns a row even though it never tops the tornado: on Tampa (FL, the
+    // table's worst rate) it swings ~$386 against ~$803 for home appreciation, mid-pack of the
+    // eight. Worth a row, not a headline.
+    // Sweep it RELATIVE (0.65x-1.35x of the entered rate) rather than the fixed percentage-point
+    // band the other factors use, because the state table behind the default spans ~0.23% (HI) to
+    // ~1.86% (FL): any single point-width band is a rounding error at one end of that 8x range and
+    // wider than the whole premium at the other.
+    insuranceFactor(inp),
   ];
 }
 
@@ -77,8 +86,34 @@ function maintenanceFactor(inp: CalcInputs, fmtRate: (n: number) => string): Fac
   };
 }
 
+/**
+ * Insurance sweep, built on the same basis-preserving shape as maintenance: both modes sweep the
+ * implied %-of-value rate, but a flat-dollar premium stays flat-dollar through the setter so the
+ * swept cost keeps riding inflation instead of being silently flipped onto the appreciation track.
+ * The band is multiplicative because the plausible error in a premium scales with the premium
+ * itself: +/-35% is a believable quote-vs-default gap in Hawaii and in Florida alike, where a
+ * shared percentage-point band could not be meaningful at both ends at once.
+ * Endpoints print at two decimals (unlike the other rate factors' one) because the cheap end of
+ * the table lives in the second digit: Hawaii's band is 0.15%-0.31%, which one decimal rounds to
+ * "0.1%"-"0.3%", reading as a 3x spread rather than the +/-35% it actually is.
+ */
+function insuranceFactor(inp: CalcInputs): Factor {
+  const insRate = impliedRate(inp.homeInsurance, inp.homePrice, 0.005);
+  const isFlat = inp.homeInsurance.kind === "flatAnnual";
+  return {
+    label: "Home insurance",
+    lo: insRate * 0.65,
+    hi: insRate * 1.35,
+    fmt: (n) => pct(n, 2),
+    set: (i, v) =>
+      isFlat
+        ? { ...i, homeInsurance: { kind: "flatAnnual", annual: v * i.homePrice } }
+        : { ...i, homeInsurance: { kind: "pctOfValue", rate: v } },
+  };
+}
+
 /** Sweep every factor and sort widest-swing first (the tornado shape). breakevenRentOnly()
- *  is pure, but this runs it ~12 times, so callers should keep it off the input hot path. */
+ *  is pure, but this runs it twice per factor, so callers should keep it off the input hot path. */
 export function computeSensitivity(inputs: CalcInputs): SensitivityRow[] {
   const monthlyRent = inputs.monthlyRent;
   return buildFactors(inputs)
