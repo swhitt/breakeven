@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { impliedRate, type CostBasis } from "../engine/calculator";
+import { impliedRate, INVESTMENT_TAX_DRAG, type CostBasis } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
 import { STANDARD_DEDUCTION } from "../engine/taxConstants";
 import { estimateMarginalRate, STATE_OPTIONS, STATE_TAX } from "../engine/taxRates";
+import { propertyTax, propertyTaxNewBuyer } from "../data/rates";
 import type { LocationData, MarketData } from "../data/types";
 import { pct, usd } from "../lib/format";
 import type { ZipData } from "../lib/zips";
@@ -16,6 +17,27 @@ type Patch = (p: Partial<AppInputs>) => void;
 // metros set a higher limit (up to $1,249,125), so this baseline is the conservative floor at
 // which to flag it. https://www.fhfa.gov/news/news-release/fhfa-announces-conforming-loan-limit-values-for-2026
 const CONFORMING_LOAN_LIMIT = 832_750;
+
+// Acquisition-value states reassess to the sale price when a home changes hands, so the ACS
+// statewide average (which is dominated by long-tenured owners sitting on capped assessments)
+// understates what someone buying today will be billed. `propertyTaxNewBuyer` carries the
+// post-sale rate for exactly those states, and is sparse on purpose: a state absent from it has
+// no reassessment to correct for, so the lookup falls through to the statewide average. Both
+// tables are Record<string, number> by declaration but not by content, hence the guards below.
+
+/** Statewide ACS average and, where the state reassesses at sale, the rate a buyer today pays. */
+function propertyTaxRates(state: string): { statewide: number | null; newBuyer: number | null } {
+  const statewide = propertyTax[state];
+  const newBuyer = propertyTaxNewBuyer[state];
+  return {
+    statewide: typeof statewide === "number" && Number.isFinite(statewide) ? statewide : null,
+    newBuyer: typeof newBuyer === "number" && Number.isFinite(newBuyer) ? newBuyer : null,
+  };
+}
+
+// Coastal and Gulf states where enough of the housing stock sits in a FEMA Special Flood Hazard
+// Area that the HO-3 figure we model is likely to be read as the whole insurance bill.
+const FLOOD_DISCLOSURE_STATES = new Set(["FL", "LA", "TX", "SC", "NC", "MS", "AL", "GA", "NJ", "NY"]);
 
 function SliderRow({
   label,
@@ -63,6 +85,8 @@ function CostRow({
   annualStep,
   homePrice,
   badge,
+  info,
+  note,
 }: {
   label: string;
   basis: CostBasis;
@@ -73,6 +97,10 @@ function CostRow({
   annualStep: number;
   homePrice: number;
   badge?: ReactNode;
+  info?: string;
+  // A standing caveat about what this cost does and doesn't cover. Unlike `info` it stays
+  // visible, because it exists to stop the figure above it being read as the whole bill.
+  note?: ReactNode;
 }) {
   const mode = basis.kind === "pctOfValue" ? "pct" : "amount";
   // Derive the other representation so the hint and a %/$ toggle have a seed and the
@@ -99,17 +127,28 @@ function CostRow({
       />
     </span>
   );
-  const hint =
+  const basisHint =
     mode === "pct"
       ? `${usd(homePrice * rate)}/yr, rises with the home's value`
       : homePrice > 0
         ? `${pct(annual / homePrice, 2)} of value, rises with inflation`
         : undefined;
+  // The note takes its own line under the conversion so it reads as prose rather than as more
+  // of the derived figure.
+  const hint =
+    note == null ? (
+      basisHint
+    ) : (
+      <>
+        {basisHint}
+        <span className="mt-1 block">{note}</span>
+      </>
+    );
   // A labelled group, not a <label>: the header holds a Segmented (toggle buttons), and an
   // interactive control nested in a <label> is invalid. Group mode means the inner control
   // needs its own name, so thread the field label down to it.
   return (
-    <Field label={label} badge={header} hint={hint} group>
+    <Field label={label} badge={header} hint={hint} info={info} group>
       {mode === "pct" ? (
         <Slider
           value={rate}
@@ -262,6 +301,8 @@ export function Controls({
   const pmiOn = inputs.downPaymentPct < 0.2;
   const loanAmount = inputs.homePrice * (1 - inputs.downPaymentPct);
   const isJumbo = loanAmount > CONFORMING_LOAN_LIMIT;
+  const propertyTaxState = activeZip ? activeZip.state : selected.state;
+  const { statewide: statewideTax, newBuyer: newBuyerTax } = propertyTaxRates(propertyTaxState);
 
   return (
     <div className="space-y-5">
@@ -318,7 +359,7 @@ export function Controls({
         step={0.01}
         onChange={(n) => patch({ downPaymentPct: n })}
         format={(n) => pct(n, 0)}
-        info="PMI is private mortgage insurance: a monthly fee lenders add when you put down less than 20%. It protects the lender, not you, and drops off once you reach 20% equity. Adjust it in Advanced."
+        info="PMI is private mortgage insurance: a monthly fee lenders add when you put down less than 20%. It protects the lender, not you. Under the Homeowners Protection Act your servicer must drop it automatically once the balance reaches 78% of the original purchase price, on the original amortization schedule. You can request cancellation earlier at 80%, but appreciation only counts if you ask, so waiting for the automatic drop costs years of extra premiums."
         hint={
           <span>
             {usd(downAmount)} down{" "}
@@ -345,11 +386,43 @@ export function Controls({
         step={0.0025}
         onChange={(n) => patch({ investmentReturn: n })}
         format={(n) => pct(n, 1)}
-        info="If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around 6% is typical for a stock-heavy mix). We grow it net of a ~0.5%/yr tax drag, since a taxable brokerage isn't tax-free. It's the single biggest lever: a higher return favors renting."
+        info={`If you don't buy, you'd likely invest that down payment instead; this is the yearly return we assume (around 6% is typical for a stock-heavy mix). We grow it net of a ${pct(INVESTMENT_TAX_DRAG, 1)}/yr tax drag, since a taxable brokerage isn't tax-free. It's the single biggest lever: a higher return favors renting.`}
         hint={(() => {
           const dp = inputs.homePrice * inputs.downPaymentPct;
-          const fv = dp * Math.pow(1 + inputs.investmentReturn, inputs.yearsToStay);
-          return `${usd(dp)} → ${usd(fv)} over ${inputs.yearsToStay} ${inputs.yearsToStay === 1 ? "year" : "years"}, the return buying has to beat`;
+          // Mirror the engine: it compounds monthly at the after-tax rate, so quoting annual
+          // compounding at the headline rate would advertise a figure the model never uses.
+          const monthlyRate = Math.max(0, inputs.investmentReturn - INVESTMENT_TAX_DRAG) / 12;
+          const fv = dp * Math.pow(1 + monthlyRate, Math.round(inputs.yearsToStay * 12));
+          return `${usd(dp)} → ${usd(fv)} over ${inputs.yearsToStay} ${inputs.yearsToStay === 1 ? "year" : "years"} after the ${pct(INVESTMENT_TAX_DRAG, 1)} tax drag, the return buying has to beat`;
+        })()}
+      />
+
+      {/* Out of Advanced deliberately: the verdict names the appreciation rate it hinges on, and
+          that sentence is only actionable if the slider it points at is in reach. */}
+      <SliderRow
+        label="Home appreciation"
+        value={inputs.homeAppreciation}
+        min={0}
+        max={0.08}
+        step={0.0025}
+        onChange={(n) => patch({ homeAppreciation: n })}
+        format={(n) => pct(n, 1)}
+        info="A conservative long-run default. Recent local run-ups overstate the future, so we don't start there."
+        hint={(() => {
+          // Local 5yr home-value CAGR for the active place (the ZIP's own, or the metro's),
+          // offered as a one-tap alternative but never the default: recent local run-ups
+          // overstate the future, so the conservative anchor stays the starting point.
+          const localAppr = activeZip ? activeZip.appreciation5yr : selected.appreciation5yr;
+          const apprPlace = activeZip ? `ZIP ${activeZip.zip}` : selected.metro;
+          return localAppr != null ? (
+            <button
+              type="button"
+              className="text-left text-rent-text underline-offset-2 hover:underline"
+              onClick={() => patch({ homeAppreciation: localAppr })}
+            >
+              {apprPlace} ran {pct(localAppr, 1)}/yr the last 5 years (use it)
+            </button>
+          ) : undefined;
         })()}
       />
 
@@ -421,32 +494,6 @@ export function Controls({
       <Disclosure summary="Advanced assumptions">
         <div className="space-y-5">
           <SliderRow
-            label="Home appreciation"
-            value={inputs.homeAppreciation}
-            min={0}
-            max={0.08}
-            step={0.0025}
-            onChange={(n) => patch({ homeAppreciation: n })}
-            format={(n) => pct(n, 1)}
-            info="A conservative long-run default. Recent local run-ups overstate the future, so we don't start there."
-            hint={(() => {
-              // Local 5yr home-value CAGR for the active place (the ZIP's own, or the metro's),
-              // offered as a one-tap alternative but never the default: recent local run-ups
-              // overstate the future, so the conservative anchor stays the starting point.
-              const localAppr = activeZip ? activeZip.appreciation5yr : selected.appreciation5yr;
-              const apprPlace = activeZip ? `ZIP ${activeZip.zip}` : selected.metro;
-              return localAppr != null ? (
-                <button
-                  type="button"
-                  className="text-left text-rent-text underline-offset-2 hover:underline"
-                  onClick={() => patch({ homeAppreciation: localAppr })}
-                >
-                  {apprPlace} ran {pct(localAppr, 1)}/yr the last 5 years (use it)
-                </button>
-              ) : undefined;
-            })()}
-          />
-          <SliderRow
             label="Rent growth"
             value={inputs.rentGrowth}
             min={0}
@@ -474,7 +521,20 @@ export function Controls({
             rateDigits={2}
             annualStep={250}
             homePrice={inputs.homePrice}
-            badge={<LiveBadge>{(activeZip ? activeZip.state : selected.state)} avg</LiveBadge>}
+            badge={
+              <LiveBadge>
+                {propertyTaxState} {newBuyerTax != null ? "new-buyer est." : "avg"}
+              </LiveBadge>
+            }
+            info={
+              newBuyerTax != null
+                ? `${propertyTaxState} reassesses to the sale price when a home changes hands, so a buyer today pays about ${pct(newBuyerTax, 2)} of value.${
+                    statewideTax != null
+                      ? ` The statewide average is ${pct(statewideTax, 2)}, but that reflects long-tenured owners whose assessments are capped, not someone buying now.`
+                      : ""
+                  } Expect a supplemental bill for the reassessment within a year of closing, on top of the seller's prorated bill.`
+                : undefined
+            }
           />
           <CostRow
             label="Maintenance / yr"
@@ -496,6 +556,11 @@ export function Controls({
             annualStep={100}
             homePrice={inputs.homePrice}
             badge={<LiveBadge>{(activeZip ? activeZip.state : selected.state)} avg</LiveBadge>}
+            note={
+              FLOOD_DISCLOSURE_STATES.has(inputs.taxState)
+                ? "HO-3 only. Flood is a separate policy, required by any normal mortgage inside a FEMA flood zone, and typically $700-$4,000/yr. If you know you're in one, switch to $ and add it."
+                : undefined
+            }
           />
           <TaxRateControl inputs={inputs} patch={patch} />
           <SliderRow
@@ -506,7 +571,7 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ buyingClosingPct: n })}
             format={(n) => pct(n, 1)}
-            info="One-time costs to buy: lender and origination fees, title and escrow, appraisal, inspection, and prepaid taxes/insurance. Typically 2-5% of the price, so 3% is a mid-range default."
+            info="One-time costs to buy: lender and origination fees, title and escrow, appraisal, inspection, and prepaid taxes/insurance. Since the 2024 NAR settlement your buyer agent's compensation is a line here too, unless you get the seller to cover it. Typically 2-5% of the price, so 3% is a mid-range default."
           />
           <SliderRow
             label="Selling costs"
@@ -516,7 +581,7 @@ export function Controls({
             step={0.0025}
             onChange={(n) => patch({ sellingCostPct: n })}
             format={(n) => pct(n, 1)}
-            info="What it costs to sell later: agent commissions plus title, escrow, and any transfer tax. Commissions are negotiable since the 2024 NAR settlement, so total selling costs increasingly run below the old 6% rule of thumb."
+            info="What it costs to sell later: agent commissions, negotiable since the 2024 NAR settlement, plus title, escrow, and any transfer tax. All-in that's typically 5-7% of the sale price, and higher where a real transfer tax bites."
           />
           {/* These labels are long; the controls column narrows to 380px at lg, so
               stack them there to avoid the labels colliding (2-up in roomier widths). */}

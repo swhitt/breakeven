@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * Field label + optional hint/live-data badge, wrapping any control. Defaults to a
@@ -76,10 +76,35 @@ export function Field({
  * hover-out, so a second tap or Escape closes it). It drops downward so it isn't clipped by a
  * horizontally-scrolling container.
  */
+/** Breathing room kept between the bubble and the viewport edge, in px. */
+const TIP_GUTTER = 8;
+
 export function InfoTip({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const bubbleId = useId();
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+
+  // The bubble is centred on the "i", so a tip near the right edge of a narrow viewport hangs
+  // its own border off-screen. Its max-width can't fix that: centring is what pushes it out, and
+  // shrinking every tip to fit the worst-placed one wastes the width the prose needs. So measure
+  // the overhang and nudge the bubble back inside.
+  //
+  // Derived from the anchor's centre rather than the bubble's current box, so re-measuring is
+  // idempotent -- reading a box that already carries the correction would compound it and walk
+  // the bubble across the screen. Measured on mount (a bubble at opacity 0 is still laid out) and
+  // again as the pointer or focus arrives, which is the cheapest way to stay correct after a
+  // reflow without putting a resize listener on all ~20 tips on the page.
+  const [shift, setShift] = useState(0);
+  const measure = () => {
+    const anchor = wrapRef.current?.getBoundingClientRect();
+    const width = bubbleRef.current?.offsetWidth;
+    if (!anchor || !width) return;
+    const centred = anchor.left + anchor.width / 2 - width / 2;
+    const rightmost = document.documentElement.clientWidth - TIP_GUTTER - width;
+    setShift(Math.round(Math.max(TIP_GUTTER, Math.min(centred, rightmost)) - centred));
+  };
+  useLayoutEffect(measure, []);
 
   // Touch has no hover-out, so the only reliable dismiss is a click-outside or Escape. Wired
   // only while open so we don't keep listeners on every tip on the page.
@@ -100,7 +125,12 @@ export function InfoTip({ text }: { text: string }) {
   }, [open]);
 
   return (
-    <span ref={wrapRef} className="group/tip relative ml-1 inline-flex align-middle">
+    <span
+      ref={wrapRef}
+      className="group/tip relative ml-1 inline-flex align-middle"
+      onPointerEnter={measure}
+      onFocus={measure}
+    >
       <button
         type="button"
         aria-label="More info"
@@ -116,13 +146,17 @@ export function InfoTip({ text }: { text: string }) {
       </button>
       <span
         id={bubbleId}
+        ref={bubbleRef}
         role="tooltip"
+        // The centring lives in the inline transform (not a -translate-x-1/2 class) so the
+        // edge correction above composes with it in one declaration.
+        style={{ transform: `translateX(calc(-50% + ${shift}px))` }}
         // whitespace-normal/break-words are explicit because a label wrapper may set
         // whitespace-nowrap, which would otherwise make the bubble one long line that
         // ignores its width and bleeds across the layout. Shown on hover/focus (desktop) or
         // when toggled open (touch); the click toggle keeps it readable instead of flashing.
         className={
-          "absolute left-1/2 top-full z-30 mt-1.5 w-56 max-w-[60vw] -translate-x-1/2 whitespace-normal break-words rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs font-normal normal-case leading-snug tracking-normal text-muted shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100 " +
+          "absolute left-1/2 top-full z-30 mt-1.5 w-56 max-w-[60vw] whitespace-normal break-words rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs font-normal normal-case leading-snug tracking-normal text-muted shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100 " +
           (open ? "opacity-100" : "pointer-events-none opacity-0")
         }
       >

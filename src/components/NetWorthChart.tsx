@@ -30,6 +30,11 @@ function NetWorthTooltip({
   const row = payload[0].payload;
   const gap = row.buyerNetWorth - row.renterNetWorth;
   const buyAhead = gap >= 0;
+  // The renter's series is the kept savings compounded plus every month's owning-minus-rent
+  // gap, so once rent grows past the cost of owning it stops being an "invested difference"
+  // and becomes cumulative cash drained (deeply negative by year 30 in expensive metros).
+  // The label has to survive that sign flip; the footnote explains it where it happens.
+  const potSpent = row.renterNetWorth < 0;
   return (
     <TooltipCard>
       <div className="mb-1 text-muted">
@@ -40,9 +45,14 @@ function NetWorthTooltip({
         <span className="tnum font-semibold text-ink">{usd(row.buyerNetWorth)}</span>
       </div>
       <div className="flex items-baseline justify-between gap-6">
-        <span className="text-rent-text">Renting (invested difference)</span>
+        <span className="text-rent-text">Renting (savings, net of rent)</span>
         <span className="tnum font-semibold text-ink">{usd(row.renterNetWorth)}</span>
       </div>
+      {potSpent && (
+        <div className="mt-1 max-w-[15rem] text-xs leading-snug text-muted">
+          Rent has outgrown the cost of owning, so the invested savings are spent and this is the cash drained since.
+        </div>
+      )}
       <div className="mt-1.5 border-t border-line pt-1.5">
         <span className={buyAhead ? "text-buy-text" : "text-rent-text"}>
           {buyAhead ? "Buying" : "Renting"} wealthier by{" "}
@@ -54,11 +64,12 @@ function NetWorthTooltip({
 }
 
 /**
- * Net worth over time: home equity if you buy versus the invest-the-difference portfolio if
- * you rent, plotted as two lines that cross in the exact breakeven year (by construction).
- * This answers "how rich am I if I leave in year N" that the cost charts only imply, off the
- * engine's net-worth array (which spans the full horizon, not just the stay). Plain lines, not
- * filled areas, so the crossing, the whole point, stays sharp.
+ * Net worth over time: home equity if you buy versus the savings you keep and invest if you
+ * rent (net of the rent you pay), plotted as two lines that cross in the exact breakeven year
+ * (by construction). This answers "how rich am I if I leave in year N" that the cost charts
+ * only imply, off the engine's net-worth array (which spans the full horizon, not just the
+ * stay). Plain lines, not filled areas, so the crossing, the whole point, stays sharp. The
+ * renting series is a balance, not a portfolio: it can and does end far below zero.
  */
 export const NetWorthChart = memo(function NetWorthChart({
   data,
@@ -78,7 +89,9 @@ export const NetWorthChart = memo(function NetWorthChart({
   const dataMax = Math.max(...vals);
   // Hug the data (don't force a zero floor) so the crossover isn't flattened against a huge
   // axis. Net worth can dip negative in the first year or two (selling costs eat thin equity),
-  // so the domain follows the data down and a faint zero rule marks "underwater" when present.
+  // and the renter's line can end hundreds of thousands below zero on a long horizon once rent
+  // outgrows owning, so the domain follows the data down and a faint zero rule marks
+  // "underwater" when present.
   const pad = Math.max(dataMax - dataMin, 1) * 0.08;
   const domainMin = dataMin - pad;
   const domainMax = dataMax + pad;
@@ -86,10 +99,20 @@ export const NetWorthChart = memo(function NetWorthChart({
 
   const stayGap = stay ? stay.buyerNetWorth - stay.renterNetWorth : 0;
 
-  const ariaLabel =
+  // Screen readers get this summary instead of the plot, so it has to carry the same sign flip
+  // the tooltip does: a renter line that ends underwater is the whole story of a long horizon.
+  const lastRow = rows[rows.length - 1];
+  const endsUnderwater = lastRow != null && lastRow.renterNetWorth < 0;
+  const shape =
     breakevenYear != null
-      ? `Net worth over ${rows.length} years if you sell and move out each year: home equity if you buy versus the invested-difference portfolio if you rent. The two cross at year ${breakevenYear}, after which buying leaves you wealthier.`
-      : `Net worth over ${rows.length} years if you sell and move out each year: home equity if you buy versus the invested-difference portfolio if you rent. Renting stays ahead the whole time at this rent.`;
+      ? `The two cross at year ${breakevenYear}, after which buying leaves you wealthier.`
+      : "Renting stays ahead the whole time at this rent.";
+  const underwater = endsUnderwater
+    ? ` By year ${lastRow.year} the renting line is ${usd(Math.abs(lastRow.renterNetWorth))} below zero: rent has outgrown the cost of owning, so the invested savings are spent.`
+    : "";
+  const ariaLabel =
+    `Net worth over ${rows.length} years if you sell and move out each year: home equity if you buy versus the savings you keep and invest if you rent, net of the rent you pay. ${shape}` +
+    underwater;
 
   return (
     <ChartFrame ariaLabel={ariaLabel}>
@@ -108,7 +131,10 @@ export const NetWorthChart = memo(function NetWorthChart({
           ticks={niceTicks(domainMin, domainMax)}
           tickLine={false}
           axisLine={false}
-          width={48}
+          // usdCompact puts the minus before the $ (-$440K), which is a whole extra glyph on
+          // every negative tick; at 48px those clip against the plot, so widen the gutter
+          // exactly when the domain goes underwater.
+          width={showZero ? 58 : 48}
           tick={{ fontSize: 12, fill: "var(--color-muted)" }}
           tickFormatter={(v) => (v === 0 ? "$0" : usdCompact(v))}
         />

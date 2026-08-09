@@ -8,8 +8,13 @@ import {
   type YearRow,
 } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
-import { MORTGAGE_INTEREST_DEBT_CAP, SALT_CAP } from "../engine/taxConstants";
-import { usd } from "../lib/format";
+import {
+  CAPITAL_GAINS_EXCLUSION,
+  MORTGAGE_INTEREST_DEBT_CAP,
+  saltCapForYear,
+  TAX_YEAR,
+} from "../engine/taxConstants";
+import { pct, usd } from "../lib/format";
 import { triggerCsvDownload } from "../lib/exportCsv";
 import { InfoTip } from "../ui";
 
@@ -69,9 +74,44 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/**
+ * What the engine quietly nets out of the buyer's sale proceeds, in words, for a sale at the
+ * end of `holdYears`. Mirrors buyerNetWorthAt's basis (price + buying closing, value less
+ * selling costs) so the copy can't promise a shield the engine didn't apply. Worth saying out
+ * loud because `capitalGainsRate` is a flat assumption (15%) with no control anywhere in the UI:
+ * a gain past the IRC 121 exclusion silently shrinks every "after selling" figure below.
+ * Returns null when the sale is clear of it, which is the common case.
+ */
+function capitalGainsNote(inputs: AppInputs, homeValue: number, holdYears: number): string | null {
+  const gain = homeValue * (1 - inputs.sellingCostPct) - inputs.homePrice * (1 + inputs.buyingClosingPct);
+  if (gain <= 0) return null;
+  const rate = pct(inputs.capitalGainsRate, 0);
+  // IRC 121 needs 2 of the last 5 years of ownership and use, so a sale inside two years gets
+  // no exclusion at all: the harsher case, and the one nobody expects.
+  if (holdYears < 2)
+    return `Selling inside two years forfeits the IRC 121 exclusion, so the whole ${usd(gain)} gain is taxed here, at an assumed ${rate}.`;
+  const exclusion = inputs.filingJointly ? CAPITAL_GAINS_EXCLUSION.joint : CAPITAL_GAINS_EXCLUSION.single;
+  if (gain <= exclusion) return null;
+  return `Projected gain at sale is ${usd(gain)}, past the ${usd(exclusion)} IRC 121 exclusion for ${
+    inputs.filingJointly ? "joint" : "single"
+  } filers. The ${usd(gain - exclusion)} above it is taxed at an assumed ${rate}, which is already netted out above.`;
+}
+
 // The full audit trail for one year, grouped so each cluster reconciles to a visible column.
-function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
+function Detail({ y, pv, inputs }: { y: YearRow; pv?: HorizonPoint; inputs: AppInputs }) {
   const buyCosts = RECURRING_COSTS.filter((c) => c.side === "buy" && y.costs[c.key] > 0);
+  // The engine caps SALT at THIS row's calendar year (the OBBBA schedule steps up 1%/yr through
+  // 2029, then reverts to $10,000 in 2030), so the hint has to quote the same year's cap:
+  // quoting the entry-year constant on every row claims a cap the engine never applied there.
+  const calendarYear = TAX_YEAR + y.year - 1;
+  const saltCap = saltCapForYear(calendarYear);
+  // Call out the year the cap actually falls, on that row only: it's the reason the tax benefit
+  // steps down there, and unexplained it reads as a bug in the table.
+  const capDrops = saltCap < saltCapForYear(calendarYear - 1);
+  // ...but only blame the benefit on it when the cap is what's binding; under it, the drop
+  // changes nothing for this buyer. saltUsed is min(base, cap), so equality means clipped.
+  const capBinds = y.saltUsed >= saltCap - 0.5;
+  const capGains = capitalGainsNote(inputs, y.homeValue, y.year);
   return (
     <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
       <Group title="Payment this year">
@@ -99,8 +139,14 @@ function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
         <Line
           label="SALT used"
           value={y.saltUsed}
-          hint={`Property tax + other state/local tax counted, after the SALT cap (${usd(SALT_CAP)} now, stepping down in later years).`}
+          hint={`Property tax + other state/local tax counted, after this year's SALT cap (${usd(saltCap)} in ${calendarYear}).`}
         />
+        {capDrops && (
+          <div className="pl-3 text-[11px] leading-snug text-muted">
+            The SALT cap falls to {usd(saltCap)} in {calendarYear} under current law
+            {capBinds ? ", which is why the tax benefit drops this year" : ""}.
+          </div>
+        )}
         <Line label="Gross cost (pre-tax-benefit)" value={grossOwningCost(y)} />
       </Group>
 
@@ -123,7 +169,13 @@ function Detail({ y, pv }: { y: YearRow; pv?: HorizonPoint }) {
 
       <Group title="Net worth if you exit now">
         <Line label="Buyer (equity after selling)" value={y.buyerNetWorth} good />
-        <Line label="Renter (invested difference)" value={y.renterNetWorth} good />
+        {/* The cap-gains haircut is inside this number and nowhere else in the row, so it gets a
+            visible note rather than an infotip: an unexplained shortfall against Equity above
+            reads as an arithmetic error. */}
+        {capGains && <div className="pl-3 text-[11px] leading-snug text-muted">{capGains}</div>}
+        {/* Not "invested difference": this is the savings the renter kept, compounded, plus every
+            month of owning-minus-rent, so it turns negative once rent outgrows owning. */}
+        <Line label="Renter (savings, net of rent)" value={y.renterNetWorth} good />
         <Line label="Buy minus rent" value={y.buyerNetWorth - y.renterNetWorth} signed strong />
       </Group>
     </div>
@@ -160,6 +212,9 @@ export function Breakdown({
   const last = years[years.length - 1];
   const lastPv = last ? pvByYear.get(last.year) : undefined;
   const nwDiff = last ? last.buyerNetWorth - last.renterNetWorth : 0;
+  // The headline sale figure is already net of capital-gains tax, so the exclusion overflow has
+  // to be stated here too, not only on the year row somebody may never expand.
+  const capGainsAtHorizon = last ? capitalGainsNote(inputs, last.homeValue, last.year) : null;
 
   function download() {
     triggerCsvDownload({
@@ -214,9 +269,11 @@ export function Breakdown({
               : `Renting and investing the difference leaves you about ${usd(-nwDiff)} wealthier.`}{" "}
             <span className="font-normal text-muted">
               The renter's portfolio is the down payment plus closing the buyer sank into the home, plus each year's
-              cash-flow difference, compounded at your investment return.
+              cash-flow difference, compounded at your investment return. It goes negative if rent outgrows the cost of
+              owning: by then the savings are spent and the balance is cumulative cash drained.
             </span>
           </p>
+          {capGainsAtHorizon && <p className="mt-2 text-xs text-muted">{capGainsAtHorizon}</p>}
         </div>
       )}
 
@@ -314,7 +371,7 @@ export function Breakdown({
                           full-width inline cell. */}
                       <td colSpan={8} className="p-0 text-left">
                         <div className="sticky left-0 w-[calc(100vw-66px)] px-3 py-3 sm:w-[calc(100vw-82px)] md:static md:w-full">
-                          <Detail y={y} pv={pv} />
+                          <Detail y={y} pv={pv} inputs={inputs} />
                         </div>
                       </td>
                     </tr>

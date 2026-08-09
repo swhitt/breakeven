@@ -1,8 +1,15 @@
 import type { ReactNode } from "react";
 import type { CalcResult } from "../engine/calculator";
 import type { AppInputs } from "../engine/defaults";
-import { FEDERAL_BRACKETS, STATE_TAX, bracketTax, estimateMarginalRate, type Bracket } from "../engine/taxRates";
-import { MORTGAGE_INTEREST_DEBT_CAP } from "../engine/taxConstants";
+import {
+  FEDERAL_BRACKETS,
+  STATE_TAX,
+  bracketTax,
+  estimateMarginalRate,
+  estimateStateIncomeTax,
+  type Bracket,
+} from "../engine/taxRates";
+import { MORTGAGE_INTEREST_DEBT_CAP, TAX_YEAR, saltCapForYear } from "../engine/taxConstants";
 import type { LocationData, MarketData } from "../data/types";
 import { pct, usd } from "../lib/format";
 import type { ActiveZip } from "./LocationPicker";
@@ -60,8 +67,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * "Show your work" for every input we derive rather than ask for: the tax brackets
- * actually applied (federal + state, your row highlighted), how the deduction is
- * valued, whether you itemize, and which live dataset each headline number came from.
+ * actually applied (federal + state, your row highlighted), how the deduction is valued
+ * against the one you'd take anyway, and which live dataset each headline number came from.
  */
 export function Derivation({
   inputs,
@@ -97,7 +104,18 @@ export function Derivation({
   const loan = inputs.homePrice * (1 - inputs.downPaymentPct);
   const intFrac = y1 && y1.interestPaid > 0 ? y1.deductibleInterest / y1.interestPaid : 1;
   const itemized = (y1?.deductibleInterest ?? 0) + (y1?.saltUsed ?? 0);
-  const itemizes = (y1?.taxBenefit ?? 0) > 0;
+  const buyingAdds = (y1?.taxBenefit ?? 0) > 0;
+
+  // The engine credits buying only the INCREMENT over what this filer deducts anyway, so the
+  // honest comparison isn't itemized-vs-standard: state and local income tax rides in SALT
+  // whether or not you buy. Recomputed from the estimator rather than read off `inputs.otherSALT`,
+  // which App only projects into the copy it hands the engine (this one still carries the 0).
+  const otherSALT = autoLive
+    ? estimateStateIncomeTax(inputs.annualIncome, inputs.filingJointly, inputs.taxState, inputs.localTaxRate)
+    : inputs.otherSALT;
+  const rentItemized = Math.min(otherSALT, saltCapForYear(TAX_YEAR));
+  const baseline = Math.max(inputs.standardDeduction, rentItemized);
+  const rentItemizes = rentItemized > inputs.standardDeduction;
 
   // Actual tax owed, summed across the full bracket schedule (not marginal * income).
   const fedTax = Math.round(bracketTax(FEDERAL_BRACKETS[status], taxable));
@@ -179,15 +197,20 @@ export function Derivation({
           </p>
           <p className="mt-1 text-muted">
             Year-1 itemized of about <span className="tnum text-ink">{usd(itemized)}</span> vs the{" "}
-            <span className="tnum text-ink">{usd(inputs.standardDeduction)}</span> standard deduction:{" "}
-            {itemizes ? (
+            <span className="tnum text-ink">{usd(baseline)}</span> you'd deduct without buying
+            {rentItemizes
+              ? ` (your state and local income tax alone counts ${usd(rentItemized)} toward SALT, already past the ${usd(inputs.standardDeduction)} standard deduction)`
+              : " (the standard deduction)"}
+            :{" "}
+            {buyingAdds ? (
               <span className="font-semibold text-buy-text">
-                you itemize, so buying earns about {usd(y1?.taxBenefit ?? 0)} of federal tax benefit in year 1 (it
-                tapers as the loan amortizes and interest falls; see the year-by-year table).
+                buying adds about {usd(y1?.taxBenefit ?? 0)} of federal tax benefit in year 1. Only the increment over
+                that baseline counts, and it shrinks as the loan amortizes and the standard deduction indexes up with
+                inflation; see the year-by-year table.
               </span>
             ) : (
               <span className="font-semibold text-ink">
-                the standard deduction wins, so buying gives no federal tax benefit at these numbers.
+                buying doesn't clear it, so it earns no federal tax benefit at these numbers.
               </span>
             )}
           </p>
