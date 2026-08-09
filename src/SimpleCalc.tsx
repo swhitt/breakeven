@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { calculate } from "./engine/calculator";
 import { buildInputs, type AppInputs } from "./engine/defaults";
 import { usd } from "./lib/format";
-import { isCloseCall } from "./lib/verdict";
+import { verdictConfidence, verdictLabel } from "./lib/verdict";
 import { ThemeToggle } from "./theme";
 import { Field, MoneyInput, Slider } from "./ui";
 import { insurance, market, propertyTax, usHome } from "./data/rates";
@@ -19,9 +19,13 @@ export function SimpleCalc() {
   const result = useMemo(() => calculate(inputs), [inputs]);
 
   const renting = result.verdict === "rent";
-  const closeCall = isCloseCall(result, inputs);
-  const verdict = closeCall ? "It's a toss-up" : renting ? "Rent" : "Buy";
-  const accent = closeCall ? "text-ink" : renting ? "text-rent" : "text-buy";
+  // Simple mode passes no flipCount, so the toss-up here is the plain 5% band. That's deliberate,
+  // not an oversight: counting flipping assumptions means importing the sensitivity sweep, which
+  // runs the engine twice per factor and would land in a bundle this page keeps small on purpose.
+  // The word still comes from the shared helper so simple and full mode speak one vocabulary.
+  const tossUp = verdictConfidence(result, inputs) === "toss-up";
+  const verdict = verdictLabel(result, inputs);
+  const accent = tossUp ? "text-ink" : renting ? "text-rent" : "text-buy";
   const aheadAmount = Math.abs(result.rentNetCost - result.buyNetCost);
   const years = inputs.yearsToStay;
   const crossYear = result.breakevenYear == null ? null : new Date().getFullYear() + result.breakevenYear;
@@ -77,12 +81,12 @@ export function SimpleCalc() {
         <div
           className={
             "mt-6 rounded-2xl border p-6 shadow-sm sm:p-8 " +
-            (closeCall ? "border-line bg-surface" : renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
+            (tossUp ? "border-line bg-surface" : renting ? "border-rent/30 bg-rent-soft/40" : "border-buy/30 bg-buy-soft/40")
           }
         >
           <div className={"text-4xl font-extrabold tracking-tight sm:text-5xl " + accent}>{verdict}</div>
           <p className="mt-3 text-lg text-ink">
-            {closeCall ? (
+            {tossUp ? (
               <>
                 Over {years} {years === 1 ? "year" : "years"} it's basically a wash, the two come within{" "}
                 <span className="font-bold">{usd(aheadAmount)}</span>. Decide on what the math can't measure.
