@@ -1,15 +1,15 @@
 {
-  "asOf": "2026-08-07",
+  "asOf": "2026-08-14",
   "mortgage": {
-    "rate30": 0.0669,
-    "rate15": 0.0601,
-    "asOf": "2026-08-06",
+    "rate30": 0.0667,
+    "rate15": 0.0596,
+    "asOf": "2026-08-13",
     "source": "Freddie Mac PMMS",
-    "jumboSpread": 0.0005
+    "jumboSpread": 0.0011
   },
   "inflation": {
-    "rate": 0.0353,
-    "asOf": "2026-06",
+    "rate": 0.0336,
+    "asOf": "2026-07",
     "source": "BLS CPI-U (CUUR0000SA0), YoY"
   },
   "appreciation": {
