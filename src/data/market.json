@@ -1,11 +1,11 @@
 {
-  "asOf": "2026-08-21",
+  "asOf": "2026-08-28",
   "mortgage": {
-    "rate30": 0.0665,
-    "rate15": 0.0595,
-    "asOf": "2026-08-20",
+    "rate30": 0.0666,
+    "rate15": 0.0598,
+    "asOf": "2026-08-27",
     "source": "Freddie Mac PMMS",
-    "jumboSpread": 0.0003
+    "jumboSpread": -0.0006
   },
   "inflation": {
     "rate": 0.0336,

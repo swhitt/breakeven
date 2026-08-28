@@ -138,5 +138,15 @@
     "rent": 2314,
     "appreciation1yr": 0.0099,
     "appreciation5yr": 0.0397
+  },
+  {
+    "date": "2026-08-28",
+    "mortgage30": 0.0666,
+    "mortgage15": 0.0598,
+    "inflation": 0.0336,
+    "homeValue": 371774,
+    "rent": 2314,
+    "appreciation1yr": 0.0099,
+    "appreciation5yr": 0.0397
   }
 ]
